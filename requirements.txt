@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+python-dotenv
+gunicorn
+pydantic[email]
+python-multipart
+Flask-Mail
+pytest
+httpx
+a2wsgi
+altcha
+pytest-asyncio
+sqlalchemy
+alembic
+psycopg2-binary
+python-jose[cryptography]
