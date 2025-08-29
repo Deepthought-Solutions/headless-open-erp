@@ -1,6 +1,6 @@
-# Octobre API
+# Headless Open ERP API
 
-This directory contains the backend API for the Octobre application. It is built with Python using the [FastAPI](https://fastapi.tiangolo.com/) framework.
+This directory contains the backend API for the Headless open API application. It is built with Python using the [FastAPI](https://fastapi.tiangolo.com/) framework.
 
 ## Architecture
 
