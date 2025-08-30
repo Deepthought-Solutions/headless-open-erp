@@ -166,3 +166,23 @@ class Fingerprint(Base):
     visitorId = Column(String, primary_key=True, index=True)
     components = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Calendar(Base):
+    __tablename__ = 'calendars'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    events = relationship("Event", back_populates="calendar")
+
+
+class Event(Base):
+    __tablename__ = 'events'
+    id = Column(Integer, primary_key=True, index=True)
+    uid = Column(String, unique=True, nullable=False)
+    summary = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    start_time = Column(DateTime(timezone=True), nullable=False)
+    end_time = Column(DateTime(timezone=True), nullable=False)
+    calendar_id = Column(Integer, ForeignKey('calendars.id'), nullable=False)
+    calendar = relationship("Calendar", back_populates="events")
