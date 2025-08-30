@@ -73,7 +73,7 @@ END:VEVENT
 END:VCALENDAR
 """
     files = {'file': ('test.ics', ics_content, 'text/calendar')}
-    response = await client.post("/calendars/", files=files)
+    response = await client.post("/upload/calendar", files=files)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     assert data["name"] == "test.ics"
@@ -83,9 +83,21 @@ END:VCALENDAR
 @pytest.mark.asyncio
 async def test_upload_invalid_file(client: AsyncClient):
     files = {'file': ('test.txt', b'some content', 'text/plain')}
-    response = await client.post("/calendars/", files=files)
+    response = await client.post("/upload/calendar", files=files)
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert response.json()["detail"] == "Invalid file type. Please upload a .ics file."
+
+@pytest.mark.asyncio
+async def test_create_calendar_json(client: AsyncClient):
+    calendar_name = "My New Calendar"
+    response = await client.post("/calendars/", json={"name": calendar_name})
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["name"] == calendar_name
+    assert "id" in data
+    assert "created_at" in data
+    assert "events" in data
+    assert isinstance(data["events"], list)
 
 @pytest.mark.asyncio
 async def test_get_calendars(client: AsyncClient):
@@ -103,7 +115,7 @@ END:VEVENT
 END:VCALENDAR
 """
     files = {'file': ('test_for_list.ics', ics_content, 'text/calendar')}
-    await client.post("/calendars/", files=files)
+    await client.post("/upload/calendar", files=files)
 
     response = await client.get("/calendars/")
     assert response.status_code == status.HTTP_200_OK
@@ -128,7 +140,7 @@ END:VEVENT
 END:VCALENDAR
 """
     files = {'file': ('another_test.ics', ics_content, 'text/calendar')}
-    upload_response = await client.post("/calendars/", files=files)
+    upload_response = await client.post("/upload/calendar", files=files)
     assert upload_response.status_code == status.HTTP_200_OK
     calendar_id = upload_response.json()["id"]
 
@@ -160,7 +172,7 @@ END:VEVENT
 END:VCALENDAR
 """
     files = {'file': (name, ics_content, 'text/calendar')}
-    response = await client.post("/calendars/", files=files)
+    response = await client.post("/upload/calendar", files=files)
     assert response.status_code == status.HTTP_200_OK
     calendar_id = response.json()["id"]
     created_event_uid = response.json()["events"][0]["uid"]

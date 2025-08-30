@@ -13,7 +13,7 @@ from application.report_service import ReportService
 from application.calendar_service import CalendarService
 from infrastructure.mail.sender import EmailSender
 from domain.contact import LeadRequest, ReportRequest, FingerprintRequest, LeadResponse, NoteCreateRequest, NoteResponse, NoteReasonResponse
-from domain.calendar import CalendarSchema, EventSchema, EventCreateSchema, EventUpdateSchema
+from domain.calendar import CalendarSchema, EventSchema, EventCreateSchema, EventUpdateSchema, CalendarCreateSchema
 from infrastructure.web.auth import get_current_user, oauth2_scheme
 from dotenv import load_dotenv
 import os
@@ -290,7 +290,20 @@ async def update_lead_notes_endpoint(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/calendars/", response_model=CalendarSchema, dependencies=[Depends(oauth2_scheme)])
-async def upload_calendar(
+async def create_calendar(
+    calendar_data: CalendarCreateSchema,
+    calendar_service: CalendarService = Depends(get_calendar_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        calendar = calendar_service.create_calendar(calendar_data)
+        return calendar
+    except Exception as e:
+        logger.exception("Error while creating calendar")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/upload/calendar", response_model=CalendarSchema, dependencies=[Depends(oauth2_scheme)])
+async def upload_calendar_file(
     file: UploadFile = File(...),
     calendar_service: CalendarService = Depends(get_calendar_service),
     current_user: dict = Depends(get_current_user)

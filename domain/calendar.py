@@ -24,6 +24,9 @@ class EventUpdateSchema(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
 
+class CalendarCreateSchema(BaseModel):
+    name: str
+
 class CalendarSchema(BaseModel):
     id: int
     name: str
