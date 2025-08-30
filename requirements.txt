@@ -14,3 +14,4 @@ sqlalchemy
 alembic
 psycopg2-binary
 python-jose[cryptography]
+icalendar

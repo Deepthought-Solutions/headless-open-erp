@@ -10,15 +10,18 @@ from application.contact_service import LeadService
 from application.note_service import NoteService
 from application.fingerprint_service import FingerprintService
 from application.report_service import ReportService
+from application.calendar_service import CalendarService
 from infrastructure.mail.sender import EmailSender
 from domain.contact import LeadRequest, ReportRequest, FingerprintRequest, LeadResponse, NoteCreateRequest, NoteResponse, NoteReasonResponse
+from domain.calendar import CalendarSchema
 from infrastructure.web.auth import get_current_user, oauth2_scheme
 from dotenv import load_dotenv
 import os
 from altcha import create_challenge, verify_solution
 from sqlalchemy.orm import Session
+from fastapi import UploadFile, File
 from infrastructure.database import SessionLocal
-from domain.orm import Report, Fingerprint, NoteReason
+from domain.orm import Report, Fingerprint, NoteReason, Calendar
 
 from run_migrations import run_migrations
 
@@ -62,11 +65,6 @@ MAIL_RECIPIENT = os.environ.get('MAIL_FROM')
 MAIL_SENDER = os.environ.get('MAIL_TO')
 ALTCHA_HMAC_KEY = os.environ.get('ALTCHA_HMAC_KEY')
 
-# Run migrations on startup, but not in the test environment
-# because they are handled by the playwright global setup.
-if os.environ.get("ENV") != "pytest":
-    run_migrations()
-
 def get_db():
     db = SessionLocal()
     try:
@@ -94,6 +92,9 @@ def get_fingerprint_service(db: Session = Depends(get_db)) -> FingerprintService
 
 def get_report_service(db: Session = Depends(get_db)) -> ReportService:
     return ReportService(db)
+
+def get_calendar_service(db: Session = Depends(get_db)) -> CalendarService:
+    return CalendarService(db)
 
 def verify_altcha_solution(altcha_solution: str):
     if os.environ.get("ENV") != "pytest":
@@ -288,6 +289,57 @@ async def update_lead_notes_endpoint(
             raise e
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@app.post("/calendars/", response_model=CalendarSchema, dependencies=[Depends(oauth2_scheme)])
+async def upload_calendar(
+    file: UploadFile = File(...),
+    calendar_service: CalendarService = Depends(get_calendar_service),
+    current_user: dict = Depends(get_current_user)
+):
+    if not file.filename.endswith('.ics'):
+        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a .ics file.")
+
+    try:
+        ical_data = await file.read()
+        calendar = calendar_service.create_calendar_from_ical(ical_data.decode('utf-8'), file.filename)
+        return calendar
+    except Exception as e:
+        logger.exception("Error while creating calendar")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/calendars/", response_model=List[CalendarSchema], dependencies=[Depends(oauth2_scheme)])
+async def list_calendars(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        calendars = db.query(Calendar).all()
+        return calendars
+    except Exception as e:
+        logger.exception("Error while getting all calendars")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/calendars/{calendar_id}", response_model=CalendarSchema, dependencies=[Depends(oauth2_scheme)])
+async def get_calendar(
+    calendar_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        calendar = db.query(Calendar).filter(Calendar.id == calendar_id).first()
+        if not calendar:
+            raise HTTPException(status_code=404, detail="Calendar not found")
+        return calendar
+    except Exception as e:
+        logger.exception(f"Error while getting calendar {calendar_id}")
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 if __name__ == '__main__':
+    # Run migrations on startup, but not in the test environment
+    # because they are handled by the playwright global setup.
+    if os.environ.get("ENV") != "pytest":
+        run_migrations()
+
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
