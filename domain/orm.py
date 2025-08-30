@@ -168,10 +168,38 @@ class Fingerprint(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+# RBAC Models
+class Role(Base):
+    __tablename__ = 'roles'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    permissions = relationship("Permission", secondary="role_permissions")
+
+class Permission(Base):
+    __tablename__ = 'permissions'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+
+class RolePermission(Base):
+    __tablename__ = 'role_permissions'
+    role_id = Column(Integer, ForeignKey('roles.id'), primary_key=True)
+    permission_id = Column(Integer, ForeignKey('permissions.id'), primary_key=True)
+
+class UserRoleAssignment(Base):
+    __tablename__ = 'user_role_assignments'
+    id = Column(Integer, primary_key=True, index=True)
+    user_sub = Column(String, nullable=False, index=True)
+    role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
+    resource_name = Column(String, nullable=False)
+    resource_id = Column(Integer, nullable=False)
+    role = relationship("Role")
+
+
 class Calendar(Base):
     __tablename__ = 'calendars'
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    creator_id = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     events = relationship("Event", back_populates="calendar")
 

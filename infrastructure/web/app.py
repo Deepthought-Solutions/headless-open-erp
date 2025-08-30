@@ -1,8 +1,9 @@
 import logging
+import os
 import sys
 from typing import List
 from pydantic import BaseModel
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from application.notification_service import EmailNotificationService
@@ -11,17 +12,23 @@ from application.note_service import NoteService
 from application.fingerprint_service import FingerprintService
 from application.report_service import ReportService
 from application.calendar_service import CalendarService
-from infrastructure.mail.sender import EmailSender
-from domain.contact import LeadRequest, ReportRequest, FingerprintRequest, LeadResponse, NoteCreateRequest, NoteResponse, NoteReasonResponse
-from domain.calendar import CalendarSchema, EventSchema, EventCreateSchema, EventUpdateSchema
-from infrastructure.web.auth import get_current_user, oauth2_scheme
+from application.rbac_service import RbacService
+from domain.calendar import (CalendarSchema, EventCreateSchema, EventSchema,
+                             EventUpdateSchema)
+from domain.contact import (FingerprintRequest, LeadRequest, LeadResponse,
+                            NoteCreateRequest, NoteReasonResponse, NoteResponse,
+                            ReportRequest)
+from altcha import create_challenge
+from domain.rbac import GrantRequestSchema, UserRoleAssignmentSchema
 from dotenv import load_dotenv
-import os
-from altcha import create_challenge, verify_solution
-from sqlalchemy.orm import Session
+from infrastructure.mail.sender import EmailSender
+from infrastructure.web.auth import (PermissionChecker, get_current_user,
+                                     get_rbac_service, oauth2_scheme)
 from fastapi import UploadFile, File
-from infrastructure.database import SessionLocal
-from domain.orm import Report, Fingerprint, NoteReason, Calendar
+from sqlalchemy.orm import Session
+
+from domain.orm import Calendar, Fingerprint, NoteReason, Report
+from infrastructure.database import SessionLocal, get_db
 
 from run_migrations import run_migrations
 
@@ -65,12 +72,6 @@ MAIL_RECIPIENT = os.environ.get('MAIL_FROM')
 MAIL_SENDER = os.environ.get('MAIL_TO')
 ALTCHA_HMAC_KEY = os.environ.get('ALTCHA_HMAC_KEY')
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 def get_email_sender() -> EmailSender:
     return EmailSender()
@@ -93,8 +94,11 @@ def get_fingerprint_service(db: Session = Depends(get_db)) -> FingerprintService
 def get_report_service(db: Session = Depends(get_db)) -> ReportService:
     return ReportService(db)
 
-def get_calendar_service(db: Session = Depends(get_db)) -> CalendarService:
-    return CalendarService(db)
+def get_calendar_service(
+    db: Session = Depends(get_db),
+    rbac_service: RbacService = Depends(get_rbac_service)
+) -> CalendarService:
+    return CalendarService(db, rbac_service)
 
 def verify_altcha_solution(altcha_solution: str):
     if os.environ.get("ENV") != "pytest":
@@ -300,7 +304,11 @@ async def upload_calendar(
 
     try:
         ical_data = await file.read()
-        calendar = calendar_service.create_calendar_from_ical(ical_data.decode('utf-8'), file.filename)
+        calendar = calendar_service.create_calendar_from_ical(
+            ical_data.decode('utf-8'),
+            file.filename,
+            current_user.username  # Pass creator_id
+        )
         return calendar
     except Exception as e:
         logger.exception("Error while creating calendar")
@@ -308,25 +316,31 @@ async def upload_calendar(
 
 @app.get("/calendars/", response_model=List[CalendarSchema], dependencies=[Depends(oauth2_scheme)])
 async def list_calendars(
-    db: Session = Depends(get_db),
+    calendar_service: CalendarService = Depends(get_calendar_service),
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        calendars = db.query(Calendar).all()
+        # Service now handles filtering by user
+        calendars = calendar_service.get_calendars_for_user(current_user.username)
         return calendars
     except Exception as e:
         logger.exception("Error while getting all calendars")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.get("/calendars/{calendar_id}", response_model=CalendarSchema, dependencies=[Depends(oauth2_scheme)])
+@app.get("/calendars/{calendar_id}", response_model=CalendarSchema, dependencies=[
+    Depends(oauth2_scheme),
+    Depends(PermissionChecker(permission="calendar:read", resource_name="calendar"))
+])
 async def get_calendar(
     calendar_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user) # Still useful for logging, etc.
 ):
     try:
+        # The permission checker has already validated access.
         calendar = db.query(Calendar).filter(Calendar.id == calendar_id).first()
         if not calendar:
+            # This should not happen if permission check passed, but as a safeguard:
             raise HTTPException(status_code=404, detail="Calendar not found")
         return calendar
     except Exception as e:
@@ -335,7 +349,10 @@ async def get_calendar(
             raise e
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/calendars/{calendar_id}/events", response_model=EventSchema, dependencies=[Depends(oauth2_scheme)])
+@app.post("/calendars/{calendar_id}/events", response_model=EventSchema, dependencies=[
+    Depends(oauth2_scheme),
+    Depends(PermissionChecker(permission="calendar:write", resource_name="calendar"))
+])
 async def create_event(
     calendar_id: int,
     event_data: EventCreateSchema,
@@ -343,6 +360,7 @@ async def create_event(
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        # Permission is checked by the dependency
         event = calendar_service.create_event(calendar_id, event_data)
         if not event:
             raise HTTPException(status_code=404, detail="Calendar not found")
@@ -353,7 +371,10 @@ async def create_event(
             raise e
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.put("/calendars/{calendar_id}/events/{event_uid}", response_model=EventSchema, dependencies=[Depends(oauth2_scheme)])
+@app.put("/calendars/{calendar_id}/events/{event_uid}", response_model=EventSchema, dependencies=[
+    Depends(oauth2_scheme),
+    Depends(PermissionChecker(permission="calendar:write", resource_name="calendar"))
+])
 async def update_event(
     calendar_id: int,
     event_uid: str,
@@ -362,6 +383,7 @@ async def update_event(
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        # Permission is checked by the dependency
         event = calendar_service.update_event(calendar_id, event_uid, event_data)
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
@@ -372,7 +394,10 @@ async def update_event(
             raise e
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.delete("/calendars/{calendar_id}/events/{event_uid}", status_code=204, dependencies=[Depends(oauth2_scheme)])
+@app.delete("/calendars/{calendar_id}/events/{event_uid}", status_code=204, dependencies=[
+    Depends(oauth2_scheme),
+    Depends(PermissionChecker(permission="calendar:write", resource_name="calendar"))
+])
 async def delete_event(
     calendar_id: int,
     event_uid: str,
@@ -380,6 +405,7 @@ async def delete_event(
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        # Permission is checked by the dependency
         success = calendar_service.delete_event(calendar_id, event_uid)
         if not success:
             raise HTTPException(status_code=404, detail="Event not found")
@@ -389,6 +415,50 @@ async def delete_event(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail="Internal server error")
+
+# RBAC Admin Router
+admin_router = APIRouter(
+    prefix="/admin",
+    tags=["Admin"],
+    dependencies=[Depends(PermissionChecker(permission="admin:manage"))]
+)
+
+@admin_router.post("/grant", response_model=UserRoleAssignmentSchema)
+async def grant_permission(
+    grant_request: GrantRequestSchema,
+    rbac_service: RbacService = Depends(get_rbac_service)
+):
+    try:
+        assignment = rbac_service.grant_role_to_user_for_resource(
+            user_sub=grant_request.user_sub,
+            role_name=grant_request.role_name,
+            resource_name=grant_request.resource_name,
+            resource_id=grant_request.resource_id,
+        )
+        return assignment
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Error granting permission")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@admin_router.post("/revoke", status_code=200)
+async def revoke_permission(
+    revoke_request: GrantRequestSchema,
+    rbac_service: RbacService = Depends(get_rbac_service)
+):
+    success = rbac_service.revoke_role_from_user_for_resource(
+        user_sub=revoke_request.user_sub,
+        role_name=revoke_request.role_name,
+        resource_name=revoke_request.resource_name,
+        resource_id=revoke_request.resource_id,
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="Role assignment not found to revoke.")
+    return {"message": "Role revoked successfully."}
+
+app.include_router(admin_router)
+
 
 if __name__ == '__main__':
     # Run migrations on startup, but not in the test environment

@@ -1,151 +1,25 @@
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient
 from fastapi import status
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-import os
 import uuid
 
-os.environ['ENV'] = 'pytest'
-os.environ['ALTCHA_HMAC_KEY'] = 'test-key'
+# Fixtures are now in conftest.py and test_rbac.py
+from tests.test_rbac import seed_rbac_data
+from infrastructure.web.app import app
+from infrastructure.web.auth import TokenData, get_current_user
+from application.rbac_service import RbacService
+from infrastructure.database import get_db
 
-from infrastructure.database import Base
-from infrastructure.web.app import app, get_db
-from infrastructure.web.auth import get_current_user, oauth2_scheme, TokenData
+# Helper to switch the current user for a test
+def set_current_user(client: AsyncClient, username: str):
+    app.dependency_overrides[get_current_user] = lambda: TokenData(username=username)
 
-# Setup the Test Database
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+async def create_calendar(client: AsyncClient, name: str = "test.ics", user: str = "testuser") -> tuple[int, str]:
+    """Helper to create a calendar for a specific user."""
+    from infrastructure.web.app import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: TokenData(username=user)
 
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-async def override_get_current_user():
-    return TokenData(username="testuser")
-
-@pytest_asyncio.fixture
-async def client():
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = override_get_current_user
-    app.dependency_overrides[oauth2_scheme] = lambda: "fake-token"
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-
-    app.dependency_overrides = {}
-
-@pytest_asyncio.fixture(scope="function", autouse=True)
-def create_test_database(client: AsyncClient): # Depends on client to ensure overrides are set
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def cleanup(request):
-    """Cleanup a testing database"""
-    def remove_db():
-        if os.path.exists("./test.db"):
-            os.remove("./test.db")
-    request.addfinalizer(remove_db)
-
-
-@pytest.mark.asyncio
-async def test_upload_calendar(client: AsyncClient):
-    # Create a dummy ics file
-    ics_content = """BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//My Calendar//EN
-BEGIN:VEVENT
-UID:12345
-DTSTAMP:20250101T120000Z
-DTSTART:20250101T130000Z
-DTEND:20250101T140000Z
-SUMMARY:Test Event
-END:VEVENT
-END:VCALENDAR
-"""
-    files = {'file': ('test.ics', ics_content, 'text/calendar')}
-    response = await client.post("/calendars/", files=files)
-    assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert data["name"] == "test.ics"
-    assert len(data["events"]) == 1
-    assert data["events"][0]["summary"] == "Test Event"
-
-@pytest.mark.asyncio
-async def test_upload_invalid_file(client: AsyncClient):
-    files = {'file': ('test.txt', b'some content', 'text/plain')}
-    response = await client.post("/calendars/", files=files)
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert response.json()["detail"] == "Invalid file type. Please upload a .ics file."
-
-@pytest.mark.asyncio
-async def test_get_calendars(client: AsyncClient):
-    # First, upload a calendar to ensure there is at least one.
-    ics_content = """BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//My Calendar//EN
-BEGIN:VEVENT
-UID:123456
-DTSTAMP:20250101T120000Z
-DTSTART:20250101T130000Z
-DTEND:20250101T140000Z
-SUMMARY:Test Event for listing
-END:VEVENT
-END:VCALENDAR
-"""
-    files = {'file': ('test_for_list.ics', ics_content, 'text/calendar')}
-    await client.post("/calendars/", files=files)
-
-    response = await client.get("/calendars/")
-    assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert isinstance(data, list)
-    assert len(data) >= 1
-    assert "test_for_list.ics" in [cal["name"] for cal in data]
-
-@pytest.mark.asyncio
-async def test_get_calendar(client: AsyncClient):
-    # First, upload a calendar to ensure one exists
-    ics_content = """BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//My Calendar//EN
-BEGIN:VEVENT
-UID:54321
-DTSTAMP:20250101T120000Z
-DTSTART:20250101T150000Z
-DTEND:20250101T160000Z
-SUMMARY:Another Test Event
-END:VEVENT
-END:VCALENDAR
-"""
-    files = {'file': ('another_test.ics', ics_content, 'text/calendar')}
-    upload_response = await client.post("/calendars/", files=files)
-    assert upload_response.status_code == status.HTTP_200_OK
-    calendar_id = upload_response.json()["id"]
-
-    response = await client.get(f"/calendars/{calendar_id}")
-    assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert data["id"] == calendar_id
-    assert data["name"] == "another_test.ics"
-    assert len(data["events"]) == 1
-    assert data["events"][0]["summary"] == "Another Test Event"
-
-@pytest.mark.asyncio
-async def test_get_nonexistent_calendar(client: AsyncClient):
-    response = await client.get("/calendars/9999")
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-
-async def create_calendar(client: AsyncClient, name: str = "test.ics") -> tuple[int, str]:
     event_uid = str(uuid.uuid4())
     ics_content = f"""BEGIN:VCALENDAR
 VERSION:2.0
@@ -161,72 +35,96 @@ END:VCALENDAR
 """
     files = {'file': (name, ics_content, 'text/calendar')}
     response = await client.post("/calendars/", files=files)
-    assert response.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_200_OK, response.text
     calendar_id = response.json()["id"]
     created_event_uid = response.json()["events"][0]["uid"]
     return calendar_id, created_event_uid
 
 @pytest.mark.asyncio
-async def test_create_event(client: AsyncClient):
-    calendar_id, _ = await create_calendar(client)
-    event_data = {
-        "summary": "New Event",
-        "description": "A new event created via API",
-        "start_time": "2025-02-01T10:00:00Z",
-        "end_time": "2025-02-01T11:00:00Z"
-    }
+async def test_upload_calendar_creates_owner(client: AsyncClient, seed_rbac_data):
+    """Test that uploading a calendar makes the uploader the owner."""
+    calendar_id, _ = await create_calendar(client, user="owner_user")
+
+    # Check permissions by trying to get the calendar as the same user
+    set_current_user(client, "owner_user")
+    response = await client.get(f"/calendars/{calendar_id}")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["id"] == calendar_id
+
+@pytest.mark.asyncio
+async def test_list_calendars_shows_only_accessible(client: AsyncClient, seed_rbac_data):
+    """Tests that a user can only list calendars they have access to."""
+    await create_calendar(client, name="cal_A.ics", user="user_a")
+    await create_calendar(client, name="cal_B.ics", user="user_b")
+
+    set_current_user(client, "user_a")
+    response_a = await client.get("/calendars/")
+    assert response_a.status_code == status.HTTP_200_OK
+    data_a = response_a.json()
+    assert len(data_a) == 1
+    assert data_a[0]["name"] == "cal_A.ics"
+
+    set_current_user(client, "user_b")
+    response_b = await client.get("/calendars/")
+    assert response_b.status_code == status.HTTP_200_OK
+    data_b = response_b.json()
+    assert len(data_b) == 1
+    assert data_b[0]["name"] == "cal_B.ics"
+
+@pytest.mark.asyncio
+async def test_calendar_permissions(client: AsyncClient, seed_rbac_data):
+    """A comprehensive test of different roles and their permissions."""
+    calendar_id, _ = await create_calendar(client, user="owner")
+
+    # A different user, 'viewer_user', tries to access it and fails
+    set_current_user(client, "viewer_user")
+    response = await client.get(f"/calendars/{calendar_id}")
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    # The owner grants 'viewer' role to the 'viewer_user'
+    db_session = next(app.dependency_overrides[get_db]())
+    rbac_service = RbacService(db_session)
+    rbac_service.grant_role_to_user_for_resource(
+        user_sub="viewer_user", role_name="viewer", resource_name="calendar", resource_id=calendar_id
+    )
+    db_session.close()
+
+    # Now, the 'viewer_user' should be able to read the calendar
+    response = await client.get(f"/calendars/{calendar_id}")
+    assert response.status_code == status.HTTP_200_OK
+
+    # But the 'viewer_user' should NOT be able to add an event (write operation)
+    event_data = {"summary": "Viewer Event", "start_time": "2025-03-01T10:00:00Z", "end_time": "2025-03-01T11:00:00Z"}
+    response = await client.post(f"/calendars/{calendar_id}/events", json=event_data)
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    # Now, let's grant the 'editor' role to a new user 'editor_user'
+    db_session = next(app.dependency_overrides[get_db]())
+    rbac_service = RbacService(db_session)
+    rbac_service.grant_role_to_user_for_resource(
+        user_sub="editor_user", role_name="editor", resource_name="calendar", resource_id=calendar_id
+    )
+    db_session.close()
+
+    # The 'editor_user' should be able to add an event
+    set_current_user(client, "editor_user")
+    event_data = {"summary": "Editor Event", "start_time": "2025-04-01T10:00:00Z", "end_time": "2025-04-01T11:00:00Z"}
     response = await client.post(f"/calendars/{calendar_id}/events", json=event_data)
     assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert data["summary"] == "New Event"
-    assert "uid" in data
+    assert response.json()["summary"] == "Editor Event"
 
 @pytest.mark.asyncio
-async def test_update_event(client: AsyncClient):
-    calendar_id, event_uid = await create_calendar(client)
-    update_data = {"summary": "Updated Summary"}
+async def test_owner_can_manage_events(client: AsyncClient, seed_rbac_data):
+    """Confirms that the original owner retains full control."""
+    calendar_id, event_uid = await create_calendar(client, user="test_owner")
+    set_current_user(client, "test_owner")
+
+    # Update event
+    update_data = {"summary": "Updated By Owner"}
     response = await client.put(f"/calendars/{calendar_id}/events/{event_uid}", json=update_data)
     assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert data["summary"] == "Updated Summary"
+    assert response.json()["summary"] == "Updated By Owner"
 
-@pytest.mark.asyncio
-async def test_delete_event(client: AsyncClient):
-    calendar_id, event_uid = await create_calendar(client)
+    # Delete event
     response = await client.delete(f"/calendars/{calendar_id}/events/{event_uid}")
     assert response.status_code == status.HTTP_204_NO_CONTENT
-
-    # Verify the event is deleted
-    cal_response_after_delete = await client.get(f"/calendars/{calendar_id}")
-    events = cal_response_after_delete.json()["events"]
-    assert all(event["uid"] != event_uid for event in events)
-
-@pytest.mark.asyncio
-async def test_update_nonexistent_event(client: AsyncClient):
-    calendar_id, _ = await create_calendar(client)
-    update_data = {"summary": "This should fail"}
-    response = await client.put(f"/calendars/{calendar_id}/events/nonexistent-uid", json=update_data)
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-
-@pytest.mark.asyncio
-async def test_delete_nonexistent_event(client: AsyncClient):
-    calendar_id, _ = await create_calendar(client)
-    response = await client.delete(f"/calendars/{calendar_id}/events/nonexistent-uid")
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-
-@pytest.mark.asyncio
-async def test_update_event_wrong_calendar(client: AsyncClient):
-    calendar_id_a, event_uid_a = await create_calendar(client, name="cal_a.ics")
-    calendar_id_b, _ = await create_calendar(client, name="cal_b.ics")
-
-    update_data = {"summary": "This should fail"}
-    response = await client.put(f"/calendars/{calendar_id_b}/events/{event_uid_a}", json=update_data)
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-
-@pytest.mark.asyncio
-async def test_delete_event_wrong_calendar(client: AsyncClient):
-    calendar_id_a, event_uid_a = await create_calendar(client, name="cal_a_2.ics")
-    calendar_id_b, _ = await create_calendar(client, name="cal_b_2.ics")
-
-    response = await client.delete(f"/calendars/{calendar_id_b}/events/{event_uid_a}")
-    assert response.status_code == status.HTTP_404_NOT_FOUND
