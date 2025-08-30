@@ -12,6 +12,18 @@ class EventSchema(BaseModel):
     class Config:
         orm_mode = True
 
+class EventCreateSchema(BaseModel):
+    summary: str
+    description: Optional[str] = None
+    start_time: datetime
+    end_time: datetime
+
+class EventUpdateSchema(BaseModel):
+    summary: Optional[str] = None
+    description: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+
 class CalendarSchema(BaseModel):
     id: int
     name: str
