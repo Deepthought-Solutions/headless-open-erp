@@ -5,13 +5,14 @@ from fastapi import status
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import os
+import uuid
 
-# Set environment to pytest before importing the app
 os.environ['ENV'] = 'pytest'
+os.environ['ALTCHA_HMAC_KEY'] = 'test-key'
 
 from infrastructure.database import Base
 from infrastructure.web.app import app, get_db
-from infrastructure.web.auth import get_current_user, oauth2_scheme
+from infrastructure.web.auth import get_current_user, oauth2_scheme, TokenData
 
 # Setup the Test Database
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -26,26 +27,26 @@ def override_get_db():
         db.close()
 
 async def override_get_current_user():
-    return {"username": "testuser"}
+    return TokenData(username="testuser")
 
-async def override_oauth2_scheme(token: str = None):
-    return "test_token"
+@pytest_asyncio.fixture
+async def client():
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[oauth2_scheme] = lambda: "fake-token"
 
-app.dependency_overrides[get_db] = override_get_db
-app.dependency_overrides[get_current_user] = override_get_current_user
-app.dependency_overrides[oauth2_scheme] = override_oauth2_scheme
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+    app.dependency_overrides = {}
 
 @pytest_asyncio.fixture(scope="function", autouse=True)
-def create_test_database():
+def create_test_database(client: AsyncClient): # Depends on client to ensure overrides are set
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
 
-@pytest_asyncio.fixture
-async def client():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
 
 @pytest.fixture(scope="session", autouse=True)
 def cleanup(request):
@@ -142,4 +143,90 @@ END:VCALENDAR
 @pytest.mark.asyncio
 async def test_get_nonexistent_calendar(client: AsyncClient):
     response = await client.get("/calendars/9999")
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+async def create_calendar(client: AsyncClient, name: str = "test.ics") -> tuple[int, str]:
+    event_uid = str(uuid.uuid4())
+    ics_content = f"""BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//My Calendar//EN
+BEGIN:VEVENT
+UID:{event_uid}
+DTSTAMP:20250101T120000Z
+DTSTART:20250101T130000Z
+DTEND:20250101T140000Z
+SUMMARY:Initial Event
+END:VEVENT
+END:VCALENDAR
+"""
+    files = {'file': (name, ics_content, 'text/calendar')}
+    response = await client.post("/calendars/", files=files)
+    assert response.status_code == status.HTTP_200_OK
+    calendar_id = response.json()["id"]
+    created_event_uid = response.json()["events"][0]["uid"]
+    return calendar_id, created_event_uid
+
+@pytest.mark.asyncio
+async def test_create_event(client: AsyncClient):
+    calendar_id, _ = await create_calendar(client)
+    event_data = {
+        "summary": "New Event",
+        "description": "A new event created via API",
+        "start_time": "2025-02-01T10:00:00Z",
+        "end_time": "2025-02-01T11:00:00Z"
+    }
+    response = await client.post(f"/calendars/{calendar_id}/events", json=event_data)
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["summary"] == "New Event"
+    assert "uid" in data
+
+@pytest.mark.asyncio
+async def test_update_event(client: AsyncClient):
+    calendar_id, event_uid = await create_calendar(client)
+    update_data = {"summary": "Updated Summary"}
+    response = await client.put(f"/calendars/{calendar_id}/events/{event_uid}", json=update_data)
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["summary"] == "Updated Summary"
+
+@pytest.mark.asyncio
+async def test_delete_event(client: AsyncClient):
+    calendar_id, event_uid = await create_calendar(client)
+    response = await client.delete(f"/calendars/{calendar_id}/events/{event_uid}")
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    # Verify the event is deleted
+    cal_response_after_delete = await client.get(f"/calendars/{calendar_id}")
+    events = cal_response_after_delete.json()["events"]
+    assert all(event["uid"] != event_uid for event in events)
+
+@pytest.mark.asyncio
+async def test_update_nonexistent_event(client: AsyncClient):
+    calendar_id, _ = await create_calendar(client)
+    update_data = {"summary": "This should fail"}
+    response = await client.put(f"/calendars/{calendar_id}/events/nonexistent-uid", json=update_data)
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_event(client: AsyncClient):
+    calendar_id, _ = await create_calendar(client)
+    response = await client.delete(f"/calendars/{calendar_id}/events/nonexistent-uid")
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+@pytest.mark.asyncio
+async def test_update_event_wrong_calendar(client: AsyncClient):
+    calendar_id_a, event_uid_a = await create_calendar(client, name="cal_a.ics")
+    calendar_id_b, _ = await create_calendar(client, name="cal_b.ics")
+
+    update_data = {"summary": "This should fail"}
+    response = await client.put(f"/calendars/{calendar_id_b}/events/{event_uid_a}", json=update_data)
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+@pytest.mark.asyncio
+async def test_delete_event_wrong_calendar(client: AsyncClient):
+    calendar_id_a, event_uid_a = await create_calendar(client, name="cal_a_2.ics")
+    calendar_id_b, _ = await create_calendar(client, name="cal_b_2.ics")
+
+    response = await client.delete(f"/calendars/{calendar_id_b}/events/{event_uid_a}")
     assert response.status_code == status.HTTP_404_NOT_FOUND

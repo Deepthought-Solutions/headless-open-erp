@@ -13,7 +13,7 @@ from application.report_service import ReportService
 from application.calendar_service import CalendarService
 from infrastructure.mail.sender import EmailSender
 from domain.contact import LeadRequest, ReportRequest, FingerprintRequest, LeadResponse, NoteCreateRequest, NoteResponse, NoteReasonResponse
-from domain.calendar import CalendarSchema
+from domain.calendar import CalendarSchema, EventSchema, EventCreateSchema, EventUpdateSchema
 from infrastructure.web.auth import get_current_user, oauth2_scheme
 from dotenv import load_dotenv
 import os
@@ -331,6 +331,61 @@ async def get_calendar(
         return calendar
     except Exception as e:
         logger.exception(f"Error while getting calendar {calendar_id}")
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/calendars/{calendar_id}/events", response_model=EventSchema, dependencies=[Depends(oauth2_scheme)])
+async def create_event(
+    calendar_id: int,
+    event_data: EventCreateSchema,
+    calendar_service: CalendarService = Depends(get_calendar_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        event = calendar_service.create_event(calendar_id, event_data)
+        if not event:
+            raise HTTPException(status_code=404, detail="Calendar not found")
+        return event
+    except Exception as e:
+        logger.exception(f"Error while creating event for calendar {calendar_id}")
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.put("/calendars/{calendar_id}/events/{event_uid}", response_model=EventSchema, dependencies=[Depends(oauth2_scheme)])
+async def update_event(
+    calendar_id: int,
+    event_uid: str,
+    event_data: EventUpdateSchema,
+    calendar_service: CalendarService = Depends(get_calendar_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        event = calendar_service.update_event(calendar_id, event_uid, event_data)
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        return event
+    except Exception as e:
+        logger.exception(f"Error while updating event {event_uid}")
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.delete("/calendars/{calendar_id}/events/{event_uid}", status_code=204, dependencies=[Depends(oauth2_scheme)])
+async def delete_event(
+    calendar_id: int,
+    event_uid: str,
+    calendar_service: CalendarService = Depends(get_calendar_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        success = calendar_service.delete_event(calendar_id, event_uid)
+        if not success:
+            raise HTTPException(status_code=404, detail="Event not found")
+        return
+    except Exception as e:
+        logger.exception(f"Error while deleting event {event_uid}")
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail="Internal server error")
