@@ -2,12 +2,19 @@ import uuid
 from icalendar import Calendar as iCalCalendar
 from sqlalchemy.orm import Session
 from domain.orm import Calendar, Event
-from domain.calendar import EventCreateSchema, EventUpdateSchema
+from domain.calendar import CalendarCreateSchema, EventCreateSchema, EventUpdateSchema
 from datetime import datetime
 
 class CalendarService:
     def __init__(self, db: Session):
         self.db = db
+
+    def create_calendar(self, calendar_data: "CalendarCreateSchema") -> Calendar:
+        db_calendar = Calendar(name=calendar_data.name)
+        self.db.add(db_calendar)
+        self.db.commit()
+        self.db.refresh(db_calendar)
+        return db_calendar
 
     def create_calendar_from_ical(self, ical_data: str, calendar_name: str) -> Calendar:
         cal = iCalCalendar.from_ical(ical_data)
