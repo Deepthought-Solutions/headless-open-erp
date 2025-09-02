@@ -70,10 +70,13 @@ class Lead(Base):
     maturity_score = Column(Integer, nullable=True)
     urgency_id = Column(Integer, ForeignKey("lead_urgencies.id"), nullable=True)
     status_id = Column(Integer, ForeignKey("lead_statuses.id"), nullable=False)
+    fingerprint_visitor_id = Column(String, ForeignKey("fingerprints.visitorId"), nullable=True)
+    altcha_solution = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    fingerprint = relationship("Fingerprint")
     contact = relationship("Contact", back_populates="leads")
     company = relationship("Company", back_populates="leads")
     status = relationship("LeadStatus")
@@ -84,6 +87,7 @@ class Lead(Base):
     attachments = relationship("LeadAttachment", back_populates="lead")
     history = relationship("LeadHistory", back_populates="lead")
     notes = relationship("Note", back_populates="lead")
+    modification_logs = relationship("LeadModificationLog", back_populates="lead")
 
     @hybrid_property
     def potential_score(self):
@@ -136,6 +140,17 @@ class LeadHistory(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     lead = relationship("Lead", back_populates="history")
+
+class LeadModificationLog(Base):
+    __tablename__ = "lead_modification_logs"
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    field_name = Column(String, nullable=False)
+    old_value = Column(String, nullable=True)
+    new_value = Column(String, nullable=True)
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    lead = relationship("Lead", back_populates="modification_logs")
 
 class NoteReason(Base):
     __tablename__ = 'note_reasons'

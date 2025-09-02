@@ -11,7 +11,7 @@ from application.note_service import NoteService
 from application.fingerprint_service import FingerprintService
 from application.report_service import ReportService
 from infrastructure.mail.sender import EmailSender
-from domain.contact import LeadRequest, ReportRequest, FingerprintRequest, LeadResponse, NoteCreateRequest, NoteResponse, NoteReasonResponse
+from domain.contact import LeadRequest, ReportRequest, FingerprintRequest, LeadResponse, NoteCreateRequest, NoteResponse, NoteReasonResponse, LeadUpdateRequest
 from infrastructure.web.auth import get_current_user, oauth2_scheme
 from dotenv import load_dotenv
 import os
@@ -121,7 +121,7 @@ async def create_lead(
     verify_altcha_solution(lead_request.altcha)
 
     try:
-        lead_service.create_lead(lead_request.lead)
+        lead_service.create_lead(lead_request.lead, lead_request.altcha, lead_request.visitorId)
         try:
             email_notification_service.send_lead_notification_email(
                 MAIL_SENDER,
@@ -284,6 +284,26 @@ async def update_lead_notes_endpoint(
         return lead
     except Exception as e:
         logger.exception(f"Error while updating notes for lead {lead_id}")
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.put("/lead/{lead_id}", response_model=LeadResponse)
+async def update_lead(
+    lead_id: int,
+    lead_update: LeadUpdateRequest,
+    lead_service: LeadService = Depends(get_lead_service)
+):
+    verify_altcha_solution(lead_update.altcha)
+    try:
+        lead = lead_service.update_lead(lead_id, lead_update)
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        return lead
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error while updating lead {lead_id}")
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail="Internal server error")
