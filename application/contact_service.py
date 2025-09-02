@@ -1,7 +1,7 @@
 import logging, sys
 from sqlalchemy.orm import Session, joinedload
-from domain.orm import Company, Position, Concern, Contact, Lead, LeadPosition, LeadConcern, RecommendedPack, LeadUrgency, LeadStatus
-from domain.contact import LeadPayload
+from domain.orm import Company, Position, Concern, Contact, Lead, LeadPosition, LeadConcern, RecommendedPack, LeadUrgency, LeadStatus, LeadModificationLog
+from domain.contact import LeadPayload, LeadUpdateRequest
 
 logger = logging.getLogger(__name__)
 # Configure logging
@@ -94,7 +94,7 @@ class LeadService:
             pack = self.db.query(RecommendedPack).filter_by(name='conformité').first()
         return pack
 
-    def create_lead(self, lead_payload: LeadPayload) -> Lead:
+    def create_lead(self, lead_payload: LeadPayload, altcha: str, visitor_id: str) -> Lead:
         try:
             contact = self._get_or_create_contact(
                 name=lead_payload.name,
@@ -130,6 +130,8 @@ class LeadService:
                 status_id=status.id,
                 maturity_score=maturity_score,
                 recommended_pack_id=recommended_pack.id,
+                altcha_solution=altcha,
+                fingerprint_visitor_id=visitor_id,
             )
             self.db.add(lead)
             self.db.commit()
@@ -194,3 +196,80 @@ class LeadService:
         except Exception as e:
             logger.exception(f"Error updating notes for lead {lead_id}")
             raise e
+
+    def update_lead(self, lead_id: int, lead_update: "LeadUpdateRequest") -> Lead:
+        lead = self.get_lead_by_id(lead_id)
+        if not lead:
+            return None
+
+        if lead.fingerprint_visitor_id != lead_update.visitorId or lead.altcha_solution != lead_update.altcha:
+            raise ValueError("Fingerprint or Altcha solution does not match.")
+
+        for field, value in lead_update.model_dump(exclude_unset=True).items():
+            if field in ["altcha", "visitorId"]:
+                continue
+
+            # Handle related fields
+            if field in ["name", "email", "phone", "job_title"]:
+                old_value = getattr(lead.contact, field)
+                if old_value != value:
+                    log_entry = LeadModificationLog(
+                        lead_id=lead_id, field_name=field, old_value=str(old_value), new_value=str(value)
+                    )
+                    self.db.add(log_entry)
+                    setattr(lead.contact, field, value)
+            elif field in ["company_name", "company_size"]:
+                if field == "company_name":
+                    old_value = lead.company.name
+                    if old_value != value:
+                        log_entry = LeadModificationLog(
+                            lead_id=lead_id, field_name=field, old_value=str(old_value), new_value=str(value)
+                        )
+                        self.db.add(log_entry)
+                        lead.company.name = value
+                else: # company_size
+                    old_value = lead.company.size
+                    if old_value != value:
+                        log_entry = LeadModificationLog(
+                            lead_id=lead_id, field_name=field, old_value=str(old_value), new_value=str(value)
+                        )
+                        self.db.add(log_entry)
+                        lead.company.size = value
+            elif field == "positions":
+                # For simplicity, we replace all positions
+                old_positions = [p.title for p in lead.positions]
+                log_entry = LeadModificationLog(
+                    lead_id=lead_id, field_name=field, old_value=str(old_positions), new_value=str(value)
+                )
+                self.db.add(log_entry)
+
+                self.db.query(LeadPosition).filter_by(lead_id=lead.id).delete()
+                for position_title in value:
+                    position = self._get_or_create_position(position_title)
+                    lead_position = LeadPosition(lead_id=lead.id, position_id=position.id)
+                    self.db.add(lead_position)
+            elif field == "concerns":
+                # For simplicity, we replace all concerns
+                old_concerns = [c.label for c in lead.concerns]
+                log_entry = LeadModificationLog(
+                    lead_id=lead_id, field_name=field, old_value=str(old_concerns), new_value=str(value)
+                )
+                self.db.add(log_entry)
+
+                self.db.query(LeadConcern).filter_by(lead_id=lead.id).delete()
+                for concern_label in value:
+                    concern = self._get_or_create_concern(concern_label)
+                    lead_concern = LeadConcern(lead_id=lead.id, concern_id=concern.id)
+                    self.db.add(lead_concern)
+            else:
+                old_value = getattr(lead, field)
+                if old_value != value:
+                    log_entry = LeadModificationLog(
+                        lead_id=lead_id, field_name=field, old_value=str(old_value), new_value=str(value)
+                    )
+                    self.db.add(log_entry)
+                    setattr(lead, field, value)
+
+        self.db.commit()
+        self.db.refresh(lead)
+        return lead

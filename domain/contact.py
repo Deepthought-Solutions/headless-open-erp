@@ -19,6 +19,23 @@ class LeadPayload(BaseModel):
 class LeadRequest(BaseModel):
     lead: LeadPayload
     altcha: str
+    visitorId: Optional[str] = None
+
+class LeadUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    job_title: Optional[str] = None
+    company_name: Optional[str] = None
+    company_size: Optional[int] = None
+    positions: Optional[List[str]] = None
+    concerns: Optional[List[str]] = None
+    problem_summary: Optional[str] = None
+    estimated_users: Optional[int] = None
+    urgency: Optional[str] = None
+    conscent: Optional[bool] = None
+    altcha: str
+    visitorId: str
 
 class ReportRequest(BaseModel):
     altcha: str
