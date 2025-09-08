@@ -1,22 +1,37 @@
-# Use an official Python runtime as a parent image
-FROM python:3.11-slim
+# Build stage
+FROM rust:1.76 AS builder
+WORKDIR /usr/src/app
 
-# Set the working directory in the container
-WORKDIR /app
+# Install refinery-cli
+RUN cargo install refinery_cli
 
-# Copy the current directory contents into the container at /app
-COPY . /app/
+# Pre-build dependencies
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release
+RUN rm -rf src
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy source and build
+COPY . .
+RUN cargo build --release
 
-# Copy entrypoint script and make it executable
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# Runtime stage
+FROM debian:bullseye-slim
+WORKDIR /usr/src/app
 
-# Make port 8000 available to the world outside this container
+# Copy refinery-cli from builder
+COPY --from=builder /root/.cargo/bin/refinery /usr/local/bin/refinery
+
+# Copy binary from builder
+COPY --from=builder /usr/src/app/target/release/headless-api .
+
+# Copy migrations and config
+COPY migrations ./migrations
+COPY refinery.toml .
+
+# Copy entrypoint script
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
 EXPOSE 8000
-
-# The entrypoint script will be created later and will run the migrations and then Gunicorn.
-# For now, I'll set a placeholder command. I will replace this with the entrypoint script later.
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "infrastructure.web.wsgi:app", "-b", "0.0.0.0:8000"]
+ENTRYPOINT ["./entrypoint.sh"]
