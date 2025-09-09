@@ -1,8 +1,8 @@
 use super::{
     company::{Company, CompanyResponse},
-    concern::{Concern, ConcernResponse},
+    concern::ConcernResponse,
     contact::{Contact, ContactResponse},
-    position::{Position, PositionResponse},
+    position::PositionResponse,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
