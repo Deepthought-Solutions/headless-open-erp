@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO lead_concerns (lead_id, concern_id) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d18b39fa5aaade2f86a7841ed984bdbffe890a0a48c5ed8b3dbd450dc5f8490"
+}

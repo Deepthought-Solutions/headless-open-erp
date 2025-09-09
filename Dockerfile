@@ -19,8 +19,8 @@ RUN cargo build --release
 FROM debian:bullseye-slim
 WORKDIR /usr/src/app
 
-# Copy refinery-cli from builder
-COPY --from=builder /root/.cargo/bin/refinery /usr/local/bin/refinery
+# # Copy refinery-cli from builder
+# COPY --from=builder /root/.cargo/bin/refinery /usr/local/bin/refinery
 
 # Copy binary from builder
 COPY --from=builder /usr/src/app/target/release/headless-api .
