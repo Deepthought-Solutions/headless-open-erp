@@ -1,13 +1,13 @@
 # Build stage
-FROM rust:1.76 AS builder
+FROM rust:1.89 AS builder
 WORKDIR /usr/src/app
 
 # Install refinery-cli
-RUN cargo install refinery_cli
 
 # Pre-build dependencies
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo install refinery_cli
 RUN cargo build --release
 RUN rm -rf src
 
