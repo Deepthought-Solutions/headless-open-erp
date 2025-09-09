@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO recommended_packs (name) VALUES ('conformité') ON CONFLICT (name) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "3dc880dd97c8d3beb262f53c7a7435968f8a76bc9d39298de9f0eccb8fa81da3"
+}

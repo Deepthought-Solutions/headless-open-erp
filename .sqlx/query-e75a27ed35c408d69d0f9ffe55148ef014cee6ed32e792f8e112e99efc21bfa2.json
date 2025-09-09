@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO fingerprints (\"visitorId\", components) VALUES ($1, '{}') ON CONFLICT (\"visitorId\") DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e75a27ed35c408d69d0f9ffe55148ef014cee6ed32e792f8e112e99efc21bfa2"
+}

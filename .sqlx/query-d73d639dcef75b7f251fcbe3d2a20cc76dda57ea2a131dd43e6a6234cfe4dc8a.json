@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO lead_statuses (name) VALUES ('nouveau') ON CONFLICT (name) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d73d639dcef75b7f251fcbe3d2a20cc76dda57ea2a131dd43e6a6234cfe4dc8a"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO lead_urgencies (name) VALUES ('ce mois') ON CONFLICT (name) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "9066d75939672adce94e265e715167698c3f68eb9502dcd4e79567a17b37b562"
+}

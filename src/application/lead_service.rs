@@ -1,11 +1,11 @@
 use crate::{
     application::error::ApplicationError,
     domain::{
-        company::{Company, CompanyResponse},
-        concern::{Concern, ConcernResponse},
-        contact::{Contact, ContactResponse},
+        company::Company,
+        concern::Concern,
+        contact::Contact,
         lead::*,
-        position::{Position, PositionResponse},
+        position::Position,
     },
 };
 use sqlx::PgPool;

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO recommended_packs (name) VALUES ('croissance') ON CONFLICT (name) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "f2f3f869546d3e174f08d8eaddc3990aa6ea17fe31d2778a94d31db33c82dfce"
+}
