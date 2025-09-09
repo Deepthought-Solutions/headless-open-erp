@@ -1,6 +1,6 @@
-# Headless Open ERP API
+# Headless API
 
-This directory contains the backend API for the Headless open API application. It is built with Python using the [FastAPI](https://fastapi.tiangolo.com/) framework.
+This directory contains the backend API for the Headless application. It is built with Rust using the [Axum](https://github.com/tokio-rs/axum) framework.
 
 ## Architecture
 
@@ -8,62 +8,74 @@ The API follows a classic layered architecture pattern, also known as Clean Arch
 
 The main layers are:
 
-*   **Domain Layer (`domain/`)**: This is the core of the application. It contains the business logic and entities.
-    *   `orm.py`: Defines the SQLAlchemy ORM models, which represent the database tables.
-    *   `contact.py`: Defines the Pydantic models used for data validation and serialization in the API (request and response bodies).
-
-*   **Application Layer (`application/`)**: This layer contains the application-specific business rules. It orchestrates the domain objects to perform use cases.
-    *   `*_service.py`: Each service (e.g., `LeadService`, `NoteService`) encapsulates the logic for a specific business domain.
-
-*   **Infrastructure Layer (`infrastructure/`)**: This layer contains all the external concerns, such as the web framework, database access, and third-party integrations.
-    *   `web/app.py`: The main FastAPI application file. It defines the API endpoints and handles the HTTP requests and responses.
-    *   `database.py`: Configures the database connection using SQLAlchemy.
-    *   `mail/sender.py`: A service for sending emails.
+*   **Domain Layer (`src/domain/`)**: This is the core of the application. It contains the business logic and entities.
+*   **Application Layer (`src/application/`)**: This layer contains the application-specific business rules. It orchestrates the domain objects to perform use cases.
+*   **Infrastructure Layer (`src/infrastructure/`)**: This layer contains all the external concerns, such as the web framework, database access, and third-party integrations.
 
 ## Getting Started
 
+This guide will help you get the application running on your local machine.
+
 ### Prerequisites
 
-*   Python 3.9+
-*   A running PostgreSQL database.
+*   [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
+*   [Cargo](https://doc.rust-lang.org/cargo/) (comes with Rust)
+*   [PostgreSQL](https://www.postgresql.org/download/)
+*   [Docker](https://docs.docker.com/get-docker/) (for containerized setup)
+*   [refinery_cli](https://crates.io/crates/refinery_cli)
 
-### Setup
+You can install `refinery_cli` with the following command:
+```bash
+cargo install refinery_cli
+```
 
-1.  **Create a virtual environment:**
+### Running Locally
+
+1.  **Clone the repository:**
     ```bash
-    python -m venv venv
-    source venv/bin/activate
+    git clone <repository-url>
+    cd headless-api
     ```
 
-2.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+2.  **Set up the database:**
+    Make sure you have a PostgreSQL instance running. Create a database for the application.
 
 3.  **Configure environment variables:**
-    Create a `.env` file in this directory (`api/`) and add the following variables. See `.env.example` for a template.
+    Create a `.env` file in the root of the project and add the following variable.
     ```
-    DATABASE_URL=postgresql://user:password@host:port/database
-    AUTHORIZED_ORIGINS=http://localhost:3000,http://localhost:5173
-    MAIL_FROM=...
-    MAIL_TO=...
-    ALTCHA_HMAC_KEY=...
-    OIDC_CLIENT_SECRET=...
-    OIDC_ISSUER_URL=...
+    DATABASE_URL=postgres://user:password@host:port/database
+    ```
+    Replace `user`, `password`, `host`, `port`, and `database` with your PostgreSQL connection details. For example:
+    ```
+    DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/main
     ```
 
-### Running the API
+4.  **Run database migrations:**
+    ```bash
+    refinery migrate -c refinery.toml -p .
+    ```
 
-To run the API in a local development environment, use the following command:
-```bash
-uvicorn infrastructure.web.app:app --reload
-```
-The API will be available at `http://localhost:8000`.
+5.  **Build and run the application:**
+    ```bash
+    cargo run
+    ```
+    The API will be available at `http://localhost:8000`.
 
-### Running Tests
+### Running with Docker
 
-The tests are located in the `tests/` directory and use `pytest`. To run the tests, execute the following command from the root of the `api` directory:
-```bash
-pytest
-```
-The tests run against a separate test database, which is created and destroyed automatically.
+You can also run the application using Docker and Docker Compose. A `docker-compose.yml` file is provided for convenience.
+
+1.  **Start the services:**
+    ```bash
+    docker-compose up --build
+    ```
+    This command will build the Docker image for the application, start a PostgreSQL container, run the database migrations, and start the API.
+
+2.  **Access the API:**
+    The API will be available at `http://localhost:8000`.
+
+3.  **Stopping the services:**
+    To stop the containers, press `Ctrl+C` in the terminal where `docker-compose` is running, or run the following command from another terminal:
+    ```bash
+    docker-compose down
+    ```
