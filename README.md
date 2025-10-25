@@ -1,5 +1,7 @@
 # Headless Open ERP API
 
+[![Run Tests](https://github.com/Deepthought-Solutions/headless-open-erp/actions/workflows/tests.yml/badge.svg)](https://github.com/Deepthought-Solutions/headless-open-erp/actions/workflows/tests.yml)
+
 This directory contains the backend API for the Headless open API application. It is built with Python using the [FastAPI](https://fastapi.tiangolo.com/) framework.
 
 ## Architecture
