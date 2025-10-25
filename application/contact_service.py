@@ -1,6 +1,6 @@
 import logging, sys
 from sqlalchemy.orm import Session, joinedload
-from domain.orm import Company, Position, Concern, Contact, Lead, LeadPosition, LeadConcern, RecommendedPack, LeadUrgency, LeadStatus, LeadModificationLog
+from domain.orm import Company, Position, Concern, Contact, Lead, LeadPosition, LeadConcern, RecommendedPack, LeadUrgency, LeadStatus, LeadModificationLog, Note, NoteReason
 from domain.contact import LeadPayload, LeadUpdateRequest
 
 logger = logging.getLogger(__name__)
@@ -21,10 +21,10 @@ class LeadService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _get_or_create_contact(self, name: str, email: str, phone: str, job_title: str) -> Contact:
+    def _get_or_create_contact(self, name: str, email: str, phone: str, job_title: str, conscent: bool = False) -> Contact:
         contact = self.db.query(Contact).filter_by(email=email).first()
         if not contact:
-            contact = Contact(name=name, email=email, phone=phone, job_title=job_title)
+            contact = Contact(name=name, email=email, phone=phone, job_title=job_title, conscent=conscent)
             self.db.add(contact)
             self.db.commit()
             self.db.refresh(contact)
@@ -33,6 +33,7 @@ class LeadService:
             contact.name = name
             contact.phone = phone
             contact.job_title = job_title
+            contact.conscent = conscent
             self.db.commit()
             self.db.refresh(contact)
         return contact
@@ -100,7 +101,8 @@ class LeadService:
                 name=lead_payload.name,
                 email=lead_payload.email,
                 phone=lead_payload.phone,
-                job_title=lead_payload.job_title
+                job_title=lead_payload.job_title,
+                conscent=lead_payload.conscent
             )
 
             company = self._get_or_create_company(
@@ -189,7 +191,25 @@ class LeadService:
         try:
             lead = self.db.query(Lead).filter(Lead.id == lead_id).one_or_none()
             if lead:
-                lead.notes = notes
+                # Get or create a "note interne" reason for internal notes
+                reason = self.db.query(NoteReason).filter_by(name="note interne").one_or_none()
+                if not reason:
+                    # If it doesn't exist, use any available reason or create a default
+                    reason = self.db.query(NoteReason).first()
+                    if not reason:
+                        reason = NoteReason(name="note interne")
+                        self.db.add(reason)
+                        self.db.commit()
+                        self.db.refresh(reason)
+
+                # Create a new Note record
+                note = Note(
+                    note=notes,
+                    author_name="system",  # Default author for internal notes
+                    lead_id=lead_id,
+                    reason_id=reason.id
+                )
+                self.db.add(note)
                 self.db.commit()
                 self.db.refresh(lead)
             return lead
@@ -210,7 +230,7 @@ class LeadService:
                 continue
 
             # Handle related fields
-            if field in ["name", "email", "phone", "job_title"]:
+            if field in ["name", "email", "phone", "job_title", "conscent"]:
                 old_value = getattr(lead.contact, field)
                 if old_value != value:
                     log_entry = LeadModificationLog(
@@ -261,6 +281,18 @@ class LeadService:
                     concern = self._get_or_create_concern(concern_label)
                     lead_concern = LeadConcern(lead_id=lead.id, concern_id=concern.id)
                     self.db.add(lead_concern)
+            elif field == "urgency":
+                # Handle urgency by looking up the LeadUrgency enum
+                urgency = self.db.query(LeadUrgency).filter_by(name=value).one_or_none()
+                if not urgency:
+                    raise ValueError(f"Invalid urgency value: {value}")
+                old_value = lead.urgency.name if lead.urgency else None
+                if old_value != value:
+                    log_entry = LeadModificationLog(
+                        lead_id=lead_id, field_name=field, old_value=str(old_value), new_value=str(value)
+                    )
+                    self.db.add(log_entry)
+                    lead.urgency_id = urgency.id
             else:
                 old_value = getattr(lead, field)
                 if old_value != value:

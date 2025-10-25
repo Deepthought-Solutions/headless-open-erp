@@ -147,7 +147,9 @@ def seed_lead(client):
         company_id=company.id,
         problem_summary="A test message",
         status_id=status.id,
-        urgency_id=urgency.id
+        urgency_id=urgency.id,
+        fingerprint_visitor_id="test-visitor",
+        altcha_solution="test-altcha-solution"
     )
     db.add(lead)
     db.commit()
@@ -165,7 +167,6 @@ def seed_lead(client):
 
 # ==================== ALTCHA Challenge Tests ====================
 # Skipping ALTCHA tests as they require specific library setup
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_altcha_challenge_success(client):
     """Test ALTCHA challenge endpoint returns valid challenge"""
     response = client.get('/altcha-challenge/')
@@ -181,7 +182,6 @@ def test_altcha_challenge_success(client):
 
 # ==================== Lead Creation Tests ====================
 # Skipping ALTCHA-dependent tests as they require specific library setup
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 @pytest.mark.asyncio
 async def test_create_lead_full_data(client):
     """Test creating lead with complete valid data"""
@@ -210,7 +210,6 @@ async def test_create_lead_full_data(client):
         mock_send_email.assert_called_once()
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_lead_minimal_data(client):
     """Test creating lead with minimal required data"""
     with patch('application.notification_service.EmailNotificationService.send_lead_notification_email'):
@@ -231,7 +230,6 @@ def test_create_lead_minimal_data(client):
         assert response.status_code == 200
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_lead_invalid_email(client):
     """Test creating lead with invalid email format"""
     altcha_payload = get_altcha_payload(client)
@@ -251,7 +249,6 @@ def test_create_lead_invalid_email(client):
     assert response.status_code == 422
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_lead_missing_required_fields(client):
     """Test creating lead with missing required fields"""
     altcha_payload = get_altcha_payload(client)
@@ -266,7 +263,6 @@ def test_create_lead_missing_required_fields(client):
     assert response.status_code == 422
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_lead_email_notification_failure(client):
     """Test lead creation succeeds even if email notification fails"""
     with patch('application.notification_service.EmailNotificationService.send_lead_notification_email') as mock_send_email:
@@ -485,7 +481,6 @@ def test_get_notes_unauthenticated(client, seed_lead):
 # ==================== Lead Notes Update Tests ====================
 # Note: The update lead notes endpoint appears to have a bug in the service layer
 # The Lead model doesn't have a 'notes' string field, only a 'notes' relationship
-@pytest.mark.skip(reason="Endpoint has implementation bug - Lead.notes is a relationship not a string field")
 def test_update_lead_notes_success(client, seed_lead):
     """Test updating lead internal notes"""
     update_data = {
@@ -498,7 +493,6 @@ def test_update_lead_notes_success(client, seed_lead):
     assert updated_lead["id"] == seed_lead
 
 
-@pytest.mark.skip(reason="Endpoint has implementation bug - Lead.notes is a relationship not a string field")
 def test_update_lead_notes_empty_string(client, seed_lead):
     """Test updating notes with empty string"""
     update_data = {
@@ -517,7 +511,6 @@ def test_update_lead_notes_not_found(client):
     assert response.status_code in [404, 500]  # May be 500 due to implementation bug
 
 
-@pytest.mark.skip(reason="Endpoint has implementation bug")
 def test_update_lead_notes_unauthenticated(client, seed_lead):
     """Test updating notes without authentication"""
     app.dependency_overrides = {}
@@ -532,7 +525,6 @@ def test_update_lead_notes_unauthenticated(client, seed_lead):
 
 # ==================== Fingerprint Tests ====================
 # Skipping ALTCHA-dependent tests
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_fingerprint_success(client):
     """Test creating fingerprint with valid data"""
     altcha_payload = get_altcha_payload(client)
@@ -553,13 +545,12 @@ def test_create_fingerprint_success(client):
     # Verify fingerprint was saved
     from infrastructure.database import SessionLocal
     db = SessionLocal()
-    fingerprint = db.query(Fingerprint).filter_by(visitor_id="test-visitor-123").first()
+    fingerprint = db.query(Fingerprint).filter_by(visitorId="test-visitor-123").first()
     assert fingerprint is not None
-    assert fingerprint.visitor_id == "test-visitor-123"
+    assert fingerprint.visitorId == "test-visitor-123"
     db.close()
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_fingerprint_duplicate_updates(client):
     """Test that duplicate fingerprint visitor_id updates existing"""
     altcha_payload = get_altcha_payload(client)
@@ -586,12 +577,11 @@ def test_create_fingerprint_duplicate_updates(client):
     # Verify only one fingerprint exists
     from infrastructure.database import SessionLocal
     db = SessionLocal()
-    fingerprints = db.query(Fingerprint).filter_by(visitor_id="duplicate-visitor").all()
+    fingerprints = db.query(Fingerprint).filter_by(visitorId="duplicate-visitor").all()
     assert len(fingerprints) == 1
     db.close()
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_fingerprint_missing_visitor_id(client):
     """Test creating fingerprint without visitor_id"""
     altcha_payload = get_altcha_payload(client)
@@ -603,7 +593,6 @@ def test_create_fingerprint_missing_visitor_id(client):
     assert response.status_code == 422
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_fingerprint_empty_components(client):
     """Test creating fingerprint with empty components"""
     altcha_payload = get_altcha_payload(client)
@@ -617,13 +606,12 @@ def test_create_fingerprint_empty_components(client):
 
 
 # ==================== Report Tests ====================
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_report_success(client):
     """Test creating report with existing fingerprint"""
     # First create a fingerprint
     from infrastructure.database import SessionLocal
     db = SessionLocal()
-    fingerprint = Fingerprint(visitor_id="test-visitor-report", components={})
+    fingerprint = Fingerprint(visitorId="test-visitor-report", components={})
     db.add(fingerprint)
     db.commit()
     db.close()
@@ -644,11 +632,10 @@ def test_create_report_success(client):
     db = SessionLocal()
     report = db.query(Report).filter_by(page="/products/item-123").first()
     assert report is not None
-    assert report.fingerprint.visitor_id == "test-visitor-report"
+    assert report.fingerprint.visitorId == "test-visitor-report"
     db.close()
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_report_fingerprint_not_found(client):
     """Test creating report when fingerprint doesn't exist"""
     altcha_payload = get_altcha_payload(client)
@@ -670,7 +657,6 @@ def test_create_report_fingerprint_not_found(client):
     db.close()
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_report_missing_page(client):
     """Test creating report without page"""
     altcha_payload = get_altcha_payload(client)
@@ -682,7 +668,6 @@ def test_create_report_missing_page(client):
     assert response.status_code == 422
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_report_missing_visitor_id(client):
     """Test creating report without visitor_id"""
     altcha_payload = get_altcha_payload(client)
@@ -694,13 +679,12 @@ def test_create_report_missing_visitor_id(client):
     assert response.status_code == 422
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_create_multiple_reports_same_fingerprint(client):
     """Test creating multiple reports for the same fingerprint"""
     # Create fingerprint
     from infrastructure.database import SessionLocal
     db = SessionLocal()
-    fingerprint = Fingerprint(visitor_id="multi-report-visitor", components={})
+    fingerprint = Fingerprint(visitorId="multi-report-visitor", components={})
     db.add(fingerprint)
     db.commit()
     db.close()
@@ -726,7 +710,7 @@ def test_create_multiple_reports_same_fingerprint(client):
     # Verify both reports exist
     db = SessionLocal()
     reports = db.query(Report).join(Fingerprint).filter(
-        Fingerprint.visitor_id == "multi-report-visitor"
+        Fingerprint.visitorId == "multi-report-visitor"
     ).all()
     assert len(reports) == 2
     db.close()
@@ -1544,11 +1528,9 @@ def test_list_classified_emails_multiple_filters(client, seed_lead):
 
 
 # ==================== PUT /lead/{lead_id} Tests ====================
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_update_lead_success(client, seed_lead):
     """Test updating a lead with valid data"""
-    altcha_payload = get_altcha_payload(client)
-
+    # Use the same altcha and visitorId that were stored during seed_lead creation
     update_data = {
         "name": "Updated Name",
         "email": "updated@example.com",
@@ -1562,7 +1544,7 @@ def test_update_lead_success(client, seed_lead):
         "estimated_users": 20,
         "urgency": "ce mois",
         "conscent": True,
-        "altcha": altcha_payload,
+        "altcha": "test-altcha-solution",
         "visitorId": "test-visitor"
     }
 
@@ -1576,16 +1558,14 @@ def test_update_lead_success(client, seed_lead):
     assert updated_lead["company"]["name"] == "Updated Company"
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_update_lead_partial_update(client, seed_lead):
     """Test partial update of lead fields"""
-    altcha_payload = get_altcha_payload(client)
-
+    # Use the same altcha and visitorId that were stored during seed_lead creation
     # Only update name and email
     update_data = {
         "name": "Only Name Updated",
         "email": "onlyemail@example.com",
-        "altcha": altcha_payload,
+        "altcha": "test-altcha-solution",
         "visitorId": "test-visitor"
     }
 
@@ -1597,7 +1577,6 @@ def test_update_lead_partial_update(client, seed_lead):
     assert updated_lead["contact"]["email"] == "onlyemail@example.com"
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_update_lead_not_found(client):
     """Test updating non-existent lead"""
     altcha_payload = get_altcha_payload(client)
@@ -1613,14 +1592,11 @@ def test_update_lead_not_found(client):
     assert response.json()["detail"] == "Lead not found"
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_update_lead_invalid_email(client, seed_lead):
     """Test updating lead with invalid email format"""
-    altcha_payload = get_altcha_payload(client)
-
     update_data = {
         "email": "invalid-email-format",
-        "altcha": altcha_payload,
+        "altcha": "test-altcha-solution",
         "visitorId": "test-visitor"
     }
 
@@ -1628,14 +1604,11 @@ def test_update_lead_invalid_email(client, seed_lead):
     assert response.status_code == 422  # Validation error
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_update_lead_invalid_urgency(client, seed_lead):
     """Test updating lead with invalid urgency value"""
-    altcha_payload = get_altcha_payload(client)
-
     update_data = {
         "urgency": "invalid_urgency_value",
-        "altcha": altcha_payload,
+        "altcha": "test-altcha-solution",
         "visitorId": "test-visitor"
     }
 
@@ -1643,7 +1616,6 @@ def test_update_lead_invalid_urgency(client, seed_lead):
     assert response.status_code == 400  # ValueError from service
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_update_lead_missing_altcha(client, seed_lead):
     """Test updating lead without ALTCHA"""
     update_data = {
@@ -1655,7 +1627,6 @@ def test_update_lead_missing_altcha(client, seed_lead):
     assert response.status_code == 422  # Missing required field
 
 
-@pytest.mark.skip(reason="ALTCHA library requires specific setup")
 def test_update_lead_invalid_altcha(client, seed_lead):
     """Test updating lead with invalid ALTCHA solution"""
     update_data = {
