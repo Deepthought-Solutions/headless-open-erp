@@ -176,6 +176,8 @@ class Report(Base):
     page = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
 
+    fingerprint = relationship("Fingerprint", backref="reports")
+
 class Fingerprint(Base):
     __tablename__ = 'fingerprints'
     visitorId = Column(String, primary_key=True, index=True)

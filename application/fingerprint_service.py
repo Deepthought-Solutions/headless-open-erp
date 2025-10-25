@@ -10,11 +10,20 @@ class FingerprintService:
 
     def create_fingerprint(self, visitor_id: str, components: dict) -> Fingerprint:
         try:
-            fingerprint = Fingerprint(
-                visitorId=visitor_id,
-                components=components
-            )
-            self.db.add(fingerprint)
+            # Check if fingerprint already exists
+            fingerprint = self.db.query(Fingerprint).filter(Fingerprint.visitorId == visitor_id).first()
+
+            if fingerprint:
+                # Update existing fingerprint
+                fingerprint.components = components
+            else:
+                # Create new fingerprint
+                fingerprint = Fingerprint(
+                    visitorId=visitor_id,
+                    components=components
+                )
+                self.db.add(fingerprint)
+
             self.db.commit()
             self.db.refresh(fingerprint)
             return fingerprint

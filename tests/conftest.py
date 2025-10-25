@@ -3,6 +3,9 @@ from fastapi.testclient import TestClient
 import sys
 import os
 
+# Set ALTCHA_HMAC_KEY before importing the app
+os.environ.setdefault('ALTCHA_HMAC_KEY', 'test-hmac-key-for-altcha')
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from infrastructure.web.app import app, get_current_user

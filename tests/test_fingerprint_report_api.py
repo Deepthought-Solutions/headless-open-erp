@@ -132,9 +132,9 @@ def test_create_fingerprint_success(client):
     # Verify fingerprint was saved
     from infrastructure.database import SessionLocal
     db = SessionLocal()
-    fingerprint = db.query(Fingerprint).filter_by(visitor_id="test-visitor-123").first()
+    fingerprint = db.query(Fingerprint).filter_by(visitorId="test-visitor-123").first()
     assert fingerprint is not None
-    assert fingerprint.visitor_id == "test-visitor-123"
+    assert fingerprint.visitorId == "test-visitor-123"
     db.close()
 
 
@@ -170,7 +170,7 @@ def test_create_fingerprint_duplicate_visitor_id(client):
     # Verify only one fingerprint exists and it's been updated
     from infrastructure.database import SessionLocal
     db = SessionLocal()
-    fingerprints = db.query(Fingerprint).filter_by(visitor_id="duplicate-visitor").all()
+    fingerprints = db.query(Fingerprint).filter_by(visitorId="duplicate-visitor").all()
     assert len(fingerprints) == 1
     db.close()
 
@@ -201,7 +201,7 @@ def test_create_report_success(client):
     # First create a fingerprint
     from infrastructure.database import SessionLocal
     db = SessionLocal()
-    fingerprint = Fingerprint(visitor_id="test-visitor-report", components={})
+    fingerprint = Fingerprint(visitorId="test-visitor-report", components={})
     db.add(fingerprint)
     db.commit()
     db.close()
@@ -222,7 +222,7 @@ def test_create_report_success(client):
     db = SessionLocal()
     report = db.query(Report).filter_by(page="/products/item-123").first()
     assert report is not None
-    assert report.fingerprint.visitor_id == "test-visitor-report"
+    assert report.fingerprint.visitorId == "test-visitor-report"
     db.close()
 
 
@@ -284,7 +284,7 @@ def test_create_multiple_reports_for_same_fingerprint(client):
     # Create fingerprint
     from infrastructure.database import SessionLocal
     db = SessionLocal()
-    fingerprint = Fingerprint(visitor_id="multi-report-visitor", components={})
+    fingerprint = Fingerprint(visitorId="multi-report-visitor", components={})
     db.add(fingerprint)
     db.commit()
     db.close()
@@ -312,7 +312,7 @@ def test_create_multiple_reports_for_same_fingerprint(client):
     # Verify both reports exist
     db = SessionLocal()
     reports = db.query(Report).join(Fingerprint).filter(
-        Fingerprint.visitor_id == "multi-report-visitor"
+        Fingerprint.visitorId == "multi-report-visitor"
     ).all()
     assert len(reports) == 2
     pages = {report.page for report in reports}
