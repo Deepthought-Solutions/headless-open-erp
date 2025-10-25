@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from infrastructure.web.app import app, get_current_user
 from infrastructure.web.auth import oauth2_scheme, TokenData
-from domain.orm import Lead, Contact, Company, Position, Concern, LeadPosition, LeadConcern, LeadUrgency, LeadStatus, NoteReason
+from domain.orm import Lead, Contact, Company, Position, Concern, LeadPosition, LeadConcern, LeadUrgency, LeadStatus, NoteReason, Fingerprint, Report, LeadModificationLog
 
 # Override the OIDC dependency for testing
 async def override_get_current_user():
@@ -76,9 +76,12 @@ def client():
 def clean_db_before_each_test():
     from infrastructure.database import SessionLocal
     db = SessionLocal()
+    db.query(LeadModificationLog).delete()
     db.query(LeadPosition).delete()
     db.query(LeadConcern).delete()
     db.query(Lead).delete()
+    db.query(Report).delete()
+    db.query(Fingerprint).delete()
     db.query(Contact).delete()
     db.query(Company).delete()
     db.query(Position).delete()

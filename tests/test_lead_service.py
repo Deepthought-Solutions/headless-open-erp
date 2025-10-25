@@ -25,7 +25,7 @@ def test_create_lead_with_fingerprint_and_altcha(lead_service, client):
 
     lead_payload = LeadPayload(
         name="Test Lead",
-        email="test@example.com",
+        email="test-lead-service-create@example.com",
         company_name="Test Company",
         positions=["Developer"],
         concerns=["PSSI"],
@@ -54,7 +54,7 @@ def test_update_lead_success(lead_service, client):
 
     lead_payload = LeadPayload(
         name="Test Lead",
-        email="test-update@example.com",
+        email="test-lead-service-update@example.com",
         company_name="Test Company",
         positions=["Developer"],
         concerns=["PSSI"],
@@ -99,7 +99,7 @@ def test_update_lead_invalid_fingerprint(lead_service, client):
 
     lead_payload = LeadPayload(
         name="Test Lead",
-        email="test-invalid@example.com",
+        email="test-lead-service-invalid@example.com",
         company_name="Test Company",
         positions=["Developer"],
         concerns=["PSSI"],
