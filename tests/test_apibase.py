@@ -222,3 +222,80 @@ def test_create_lead_missing_data(client):
     }
     response = client.post('/lead/', json=data)
     assert response.status_code == 422
+
+
+# GET /leads/{lead_id} endpoint tests
+def test_get_lead_by_id_success(client, seed_db):
+    from infrastructure.database import SessionLocal
+    db = SessionLocal()
+    lead = db.query(Lead).first()
+    lead_id = lead.id
+    db.close()
+
+    response = client.get(f"/leads/{lead_id}")
+    assert response.status_code == 200
+
+    lead_data = response.json()
+    assert lead_data["id"] == lead_id
+    assert lead_data["contact"]["name"] == "Test User"
+    assert lead_data["company"]["name"] == "Test Company"
+    assert lead_data["problem_summary"] == "A test message"
+
+
+def test_get_lead_by_id_not_found(client):
+    response = client.get("/leads/99999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Lead not found"
+
+
+def test_get_lead_unauthenticated(client, seed_db):
+    from infrastructure.database import SessionLocal
+    db = SessionLocal()
+    lead = db.query(Lead).first()
+    lead_id = lead.id
+    db.close()
+
+    # Temporarily remove auth override
+    app.dependency_overrides = {}
+
+    response = client.get(f"/leads/{lead_id}")
+    assert response.status_code == 401
+
+    # Restore auth override
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[oauth2_scheme] = override_oauth2_scheme
+
+
+def test_get_lead_not_found(client):
+    response = client.get("/leads/99999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Lead not found"
+
+
+# GET /note-reasons/ endpoint tests
+def test_list_note_reasons_success(client):
+    response = client.get("/note-reasons/")
+    assert response.status_code == 200
+
+    reasons = response.json()
+    assert len(reasons) == 5
+    reason_names = {reason["name"] for reason in reasons}
+    assert reason_names == {
+        'appel sortant',
+        'mail sortant',
+        'appel entrant',
+        'mail entrant',
+        'rencontre'
+    }
+
+
+def test_list_note_reasons_unauthenticated(client):
+    # Temporarily remove auth override
+    app.dependency_overrides = {}
+
+    response = client.get("/note-reasons/")
+    assert response.status_code == 401
+
+    # Restore auth override
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[oauth2_scheme] = override_oauth2_scheme

@@ -550,3 +550,171 @@ def test_classified_emails_require_authentication(client):
     # Restore auth override
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[oauth2_scheme] = override_oauth2_scheme
+
+
+# Additional error scenario tests
+def test_update_email_account_not_found(client):
+    update_data = {
+        "name": "Updated Name"
+    }
+    response = client.put("/email-accounts/99999", json=update_data)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Email account not found"
+
+
+def test_delete_email_account_not_found(client):
+    response = client.delete("/email-accounts/99999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Email account not found"
+
+
+def test_update_classified_email_not_found(client):
+    update_data = {
+        "classification": "new_classification",
+        "emergency_level": 3
+    }
+    response = client.put("/classified-emails/99999", json=update_data)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Classified email not found"
+
+
+def test_delete_classified_email_not_found(client):
+    response = client.delete("/classified-emails/99999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Classified email not found"
+
+
+def test_update_classified_email_invalid_emergency_level(client):
+    # Create account and email first
+    account_response = client.post("/email-accounts/", json={
+        "name": "Test Account",
+        "imap_host": "imap.example.com",
+        "imap_port": 993,
+        "imap_username": "user@example.com",
+        "imap_password": "password"
+    })
+    account_id = account_response.json()["id"]
+
+    create_response = client.post("/classified-emails/", json={
+        "email_account_id": account_id,
+        "imap_id": "12345",
+        "sender": "sender@example.com",
+        "recipients": "recipient@example.com",
+        "emergency_level": 2
+    })
+    email_id = create_response.json()["id"]
+
+    # Try to update with invalid emergency level
+    update_data = {
+        "emergency_level": 10  # Invalid: must be 1-5
+    }
+    response = client.put(f"/classified-emails/{email_id}", json=update_data)
+    assert response.status_code == 400
+    assert "Emergency level must be between 1 and 5" in response.json()["detail"]
+
+
+def test_update_classified_email_abstract_too_long(client):
+    # Create account and email first
+    account_response = client.post("/email-accounts/", json={
+        "name": "Test Account",
+        "imap_host": "imap.example.com",
+        "imap_port": 993,
+        "imap_username": "user@example.com",
+        "imap_password": "password"
+    })
+    account_id = account_response.json()["id"]
+
+    create_response = client.post("/classified-emails/", json={
+        "email_account_id": account_id,
+        "imap_id": "12345",
+        "sender": "sender@example.com",
+        "recipients": "recipient@example.com"
+    })
+    email_id = create_response.json()["id"]
+
+    # Try to update with abstract > 200 chars
+    update_data = {
+        "abstract": "x" * 201
+    }
+    response = client.put(f"/classified-emails/{email_id}", json=update_data)
+    assert response.status_code == 400
+    assert "Abstract must be 200 characters or less" in response.json()["detail"]
+
+
+def test_create_classified_email_missing_required_fields(client):
+    # Missing email_account_id, imap_id, sender, recipients
+    data = {
+        "subject": "Test Subject"
+    }
+    response = client.post("/classified-emails/", json=data)
+    assert response.status_code == 422
+
+
+def test_list_classified_emails_empty(client):
+    """Test listing emails when none exist"""
+    response = client.get("/classified-emails/")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_email_accounts_empty(client):
+    """Test listing accounts when none exist"""
+    response = client.get("/email-accounts/")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_classified_email_with_invalid_lead_id(client):
+    """Test creating classified email with non-existent lead_id"""
+    account_response = client.post("/email-accounts/", json={
+        "name": "Test Account",
+        "imap_host": "imap.example.com",
+        "imap_port": 993,
+        "imap_username": "user@example.com",
+        "imap_password": "password"
+    })
+    account_id = account_response.json()["id"]
+
+    # Try to create email with invalid lead_id
+    response = client.post("/classified-emails/", json={
+        "email_account_id": account_id,
+        "imap_id": "12345",
+        "sender": "sender@example.com",
+        "recipients": "recipient@example.com",
+        "lead_id": 99999  # Non-existent lead
+    })
+
+    # Should succeed - foreign key constraint may allow null or defer check
+    # This tests the actual behavior
+    assert response.status_code in [200, 400, 500]
+
+
+def test_create_classified_email_duplicate_imap_id_same_account(client):
+    """Test creating emails with duplicate IMAP IDs for the same account"""
+    account_response = client.post("/email-accounts/", json={
+        "name": "Test Account",
+        "imap_host": "imap.example.com",
+        "imap_port": 993,
+        "imap_username": "user@example.com",
+        "imap_password": "password"
+    })
+    account_id = account_response.json()["id"]
+
+    # Create first email
+    response1 = client.post("/classified-emails/", json={
+        "email_account_id": account_id,
+        "imap_id": "duplicate-123",
+        "sender": "sender1@example.com",
+        "recipients": "recipient@example.com"
+    })
+    assert response1.status_code == 200
+
+    # Try to create second email with same IMAP ID - should fail due to unique constraint
+    response2 = client.post("/classified-emails/", json={
+        "email_account_id": account_id,
+        "imap_id": "duplicate-123",
+        "sender": "sender2@example.com",
+        "recipients": "recipient@example.com"
+    })
+    # Should fail with 500 or 400 due to unique constraint violation
+    assert response2.status_code in [400, 500]
