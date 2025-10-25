@@ -10,8 +10,14 @@ from application.contact_service import LeadService
 from application.note_service import NoteService
 from application.fingerprint_service import FingerprintService
 from application.report_service import ReportService
+from application.email_service import EmailAccountService, ClassifiedEmailService
 from infrastructure.mail.sender import EmailSender
-from domain.contact import LeadRequest, ReportRequest, FingerprintRequest, LeadResponse, NoteCreateRequest, NoteResponse, NoteReasonResponse, LeadUpdateRequest
+from domain.contact import (
+    LeadRequest, ReportRequest, FingerprintRequest, LeadResponse,
+    NoteCreateRequest, NoteResponse, NoteReasonResponse, LeadUpdateRequest,
+    EmailAccountCreate, EmailAccountUpdate, EmailAccountResponse,
+    ClassifiedEmailCreate, ClassifiedEmailUpdate, ClassifiedEmailResponse, ClassifiedEmailDetailResponse
+)
 from infrastructure.web.auth import get_current_user, oauth2_scheme
 from dotenv import load_dotenv
 import os
@@ -94,6 +100,12 @@ def get_fingerprint_service(db: Session = Depends(get_db)) -> FingerprintService
 
 def get_report_service(db: Session = Depends(get_db)) -> ReportService:
     return ReportService(db)
+
+def get_email_account_service(db: Session = Depends(get_db)) -> EmailAccountService:
+    return EmailAccountService(db)
+
+def get_classified_email_service(db: Session = Depends(get_db)) -> ClassifiedEmailService:
+    return ClassifiedEmailService(db)
 
 def verify_altcha_solution(altcha_solution: str):
     if os.environ.get("ENV") != "pytest":
@@ -307,6 +319,175 @@ async def update_lead(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail="Internal server error")
+
+# Email Account Endpoints
+@app.post("/email-accounts/", response_model=EmailAccountResponse, dependencies=[Depends(oauth2_scheme)])
+async def create_email_account(
+    account_data: EmailAccountCreate,
+    email_account_service: EmailAccountService = Depends(get_email_account_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        account = email_account_service.create_account(account_data)
+        return account
+    except Exception as e:
+        logger.exception("Error creating email account")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/email-accounts/", response_model=List[EmailAccountResponse], dependencies=[Depends(oauth2_scheme)])
+async def list_email_accounts(
+    email_account_service: EmailAccountService = Depends(get_email_account_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        accounts = email_account_service.get_all_accounts()
+        return accounts
+    except Exception as e:
+        logger.exception("Error listing email accounts")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/email-accounts/{account_id}", response_model=EmailAccountResponse, dependencies=[Depends(oauth2_scheme)])
+async def get_email_account(
+    account_id: int,
+    email_account_service: EmailAccountService = Depends(get_email_account_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        account = email_account_service.get_account_by_id(account_id)
+        if not account:
+            raise HTTPException(status_code=404, detail="Email account not found")
+        return account
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting email account {account_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/email-accounts/{account_id}", response_model=EmailAccountResponse, dependencies=[Depends(oauth2_scheme)])
+async def update_email_account(
+    account_id: int,
+    update_data: EmailAccountUpdate,
+    email_account_service: EmailAccountService = Depends(get_email_account_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        account = email_account_service.update_account(account_id, update_data)
+        if not account:
+            raise HTTPException(status_code=404, detail="Email account not found")
+        return account
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating email account {account_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/email-accounts/{account_id}", dependencies=[Depends(oauth2_scheme)])
+async def delete_email_account(
+    account_id: int,
+    email_account_service: EmailAccountService = Depends(get_email_account_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        success = email_account_service.delete_account(account_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Email account not found")
+        return JSONResponse(status_code=200, content={"message": "Email account deleted successfully"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error deleting email account {account_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Classified Email Endpoints
+@app.post("/classified-emails/", response_model=ClassifiedEmailResponse, dependencies=[Depends(oauth2_scheme)])
+async def create_classified_email(
+    email_data: ClassifiedEmailCreate,
+    classified_email_service: ClassifiedEmailService = Depends(get_classified_email_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        email = classified_email_service.create_classified_email(email_data)
+        return email
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Error creating classified email")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/classified-emails/", response_model=List[ClassifiedEmailResponse], dependencies=[Depends(oauth2_scheme)])
+async def list_classified_emails(
+    email_account_id: int = None,
+    emergency_level: int = None,
+    classification: str = None,
+    lead_id: int = None,
+    classified_email_service: ClassifiedEmailService = Depends(get_classified_email_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        emails = classified_email_service.get_all_emails(
+            email_account_id=email_account_id,
+            emergency_level=emergency_level,
+            classification=classification,
+            lead_id=lead_id
+        )
+        return emails
+    except Exception as e:
+        logger.exception("Error listing classified emails")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/classified-emails/{email_id}", response_model=ClassifiedEmailDetailResponse, dependencies=[Depends(oauth2_scheme)])
+async def get_classified_email(
+    email_id: int,
+    classified_email_service: ClassifiedEmailService = Depends(get_classified_email_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        email = classified_email_service.get_email_by_id(email_id)
+        if not email:
+            raise HTTPException(status_code=404, detail="Classified email not found")
+        return email
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting classified email {email_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/classified-emails/{email_id}", response_model=ClassifiedEmailResponse, dependencies=[Depends(oauth2_scheme)])
+async def update_classified_email(
+    email_id: int,
+    update_data: ClassifiedEmailUpdate,
+    classified_email_service: ClassifiedEmailService = Depends(get_classified_email_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        email = classified_email_service.update_classification(email_id, update_data)
+        if not email:
+            raise HTTPException(status_code=404, detail="Classified email not found")
+        return email
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating classified email {email_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/classified-emails/{email_id}", dependencies=[Depends(oauth2_scheme)])
+async def delete_classified_email(
+    email_id: int,
+    classified_email_service: ClassifiedEmailService = Depends(get_classified_email_service),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        success = classified_email_service.delete_email(email_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Classified email not found")
+        return JSONResponse(status_code=200, content={"message": "Classified email deleted successfully"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error deleting classified email {email_id}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == '__main__':
     import uvicorn

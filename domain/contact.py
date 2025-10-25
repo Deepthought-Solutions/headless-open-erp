@@ -134,3 +134,88 @@ class LeadResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Email Account models
+class EmailAccountCreate(BaseModel):
+    name: str
+    imap_host: str
+    imap_port: int = 993
+    imap_username: str
+    imap_password: str
+    imap_use_ssl: bool = True
+
+class EmailAccountUpdate(BaseModel):
+    name: Optional[str] = None
+    imap_host: Optional[str] = None
+    imap_port: Optional[int] = None
+    imap_username: Optional[str] = None
+    imap_password: Optional[str] = None
+    imap_use_ssl: Optional[bool] = None
+
+class EmailAccountResponse(BaseModel):
+    id: int
+    name: str
+    imap_host: str
+    imap_port: int
+    imap_username: str
+    imap_use_ssl: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Classified Email models
+class ClassifiedEmailCreate(BaseModel):
+    email_account_id: int
+    imap_id: str
+    sender: str
+    recipients: str  # Comma-separated
+    subject: Optional[str] = None
+    email_date: Optional[datetime] = None
+    classification: Optional[str] = None
+    emergency_level: Optional[int] = None  # 1-5
+    abstract: Optional[str] = None  # Max 200 chars
+    lead_id: Optional[int] = None
+
+class ClassifiedEmailUpdate(BaseModel):
+    classification: Optional[str] = None
+    emergency_level: Optional[int] = None
+    abstract: Optional[str] = None
+    lead_id: Optional[int] = None
+    change_reason: Optional[str] = None
+
+class EmailClassificationHistoryResponse(BaseModel):
+    id: int
+    classification: Optional[str]
+    emergency_level: Optional[int]
+    abstract: Optional[str]
+    changed_at: datetime
+    change_reason: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+class ClassifiedEmailResponse(BaseModel):
+    id: int
+    email_account_id: int
+    imap_id: str
+    sender: str
+    recipients: str
+    subject: Optional[str]
+    email_date: Optional[datetime]
+    classification: Optional[str]
+    emergency_level: Optional[int]
+    abstract: Optional[str]
+    lead_id: Optional[int]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ClassifiedEmailDetailResponse(ClassifiedEmailResponse):
+    classification_history: List[EmailClassificationHistoryResponse] = []
+
+    class Config:
+        from_attributes = True
