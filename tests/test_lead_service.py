@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch
 from domain.orm import Lead, LeadModificationLog, Fingerprint
-from application.contact_service import LeadService
+from application.lead_service import LeadService
 from domain.contact import LeadUpdateRequest, LeadPayload
 from infrastructure.database import SessionLocal
 

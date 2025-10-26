@@ -1,33 +1,35 @@
 import logging
-from sqlalchemy.orm import Session
-from domain.orm import Fingerprint
+from datetime import datetime
+
+from domain.repositories.fingerprint_repository import FingerprintRepository
+from domain.entities.fingerprint import Fingerprint
 
 logger = logging.getLogger(__name__)
 
 class FingerprintService:
-    def __init__(self, db: Session):
-        self.db = db
+    """Application service for fingerprint operations - uses repository pattern."""
+
+    def __init__(self, fingerprint_repository: FingerprintRepository):
+        self._fingerprint_repo = fingerprint_repository
 
     def create_fingerprint(self, visitor_id: str, components: dict) -> Fingerprint:
+        """Create or update a fingerprint."""
         try:
             # Check if fingerprint already exists
-            fingerprint = self.db.query(Fingerprint).filter(Fingerprint.visitorId == visitor_id).first()
+            existing = self._fingerprint_repo.find_by_visitor_id(visitor_id)
 
-            if fingerprint:
+            if existing:
                 # Update existing fingerprint
-                fingerprint.components = components
+                existing.components = components
+                return self._fingerprint_repo.save(existing)
             else:
-                # Create new fingerprint
+                # Create new fingerprint domain entity
                 fingerprint = Fingerprint(
-                    visitorId=visitor_id,
-                    components=components
+                    visitor_id=visitor_id,
+                    components=components,
+                    created_at=datetime.now()
                 )
-                self.db.add(fingerprint)
-
-            self.db.commit()
-            self.db.refresh(fingerprint)
-            return fingerprint
+                return self._fingerprint_repo.save(fingerprint)
         except Exception as e:
             logger.exception("Error creating fingerprint")
-            self.db.rollback()
             raise e

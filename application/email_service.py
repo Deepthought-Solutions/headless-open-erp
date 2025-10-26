@@ -1,113 +1,126 @@
 import logging
-import sys
-from sqlalchemy.orm import Session, joinedload
+from datetime import datetime
 from typing import List, Optional
-from domain.orm import EmailAccount, ClassifiedEmail, EmailClassificationHistory
+
+from sqlalchemy.orm import Session, joinedload
+
+from domain.repositories.email_repository import EmailAccountRepository, ClassifiedEmailRepository
+from domain.entities.email import EmailAccount, ClassifiedEmail, EmailClassificationHistory
 from domain.contact import (
     EmailAccountCreate, EmailAccountUpdate,
     ClassifiedEmailCreate, ClassifiedEmailUpdate
 )
+# Still need ORM for API compatibility
+from infrastructure.persistence.models import EmailAccountModel as EmailAccountORM, ClassifiedEmailModel as ClassifiedEmailORM
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-handler = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-
-logger.handlers = []
-logger.addHandler(handler)
-logger.propagate = False
 
 
 class EmailAccountService:
-    def __init__(self, db: Session):
-        self.db = db
+    """Application service for email account operations - uses repository pattern."""
 
-    def create_account(self, account_data: EmailAccountCreate) -> EmailAccount:
+    def __init__(self, email_account_repository: EmailAccountRepository):
+        self._email_account_repo = email_account_repository
+
+    def create_account(self, account_data: EmailAccountCreate) -> EmailAccountORM:
         """Create a new email account configuration."""
         try:
-            account = EmailAccount(
+            account_entity = EmailAccount(
+                id=None,
                 name=account_data.name,
                 imap_host=account_data.imap_host,
                 imap_port=account_data.imap_port,
                 imap_username=account_data.imap_username,
                 imap_password=account_data.imap_password,
-                imap_use_ssl=1 if account_data.imap_use_ssl else 0
+                imap_use_ssl=account_data.imap_use_ssl,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
             )
-            self.db.add(account)
-            self.db.commit()
-            self.db.refresh(account)
-            logger.info(f"Created email account: {account.name}")
-            return account
+            saved_entity = self._email_account_repo.save(account_entity)
+            logger.info(f"Created email account: {saved_entity.name}")
+
+            # Return ORM for API compatibility
+            from infrastructure.persistence.mappers.email_mapper import EmailAccountMapper
+            return EmailAccountMapper.to_model(saved_entity)
         except Exception as e:
             logger.exception("Error creating email account")
-            self.db.rollback()
             raise e
 
-    def get_account_by_id(self, account_id: int) -> Optional[EmailAccount]:
+    def get_account_by_id(self, account_id: int) -> Optional[EmailAccountORM]:
         """Get email account by ID."""
         try:
-            return self.db.query(EmailAccount).filter(EmailAccount.id == account_id).first()
+            entity = self._email_account_repo.find_by_id(account_id)
+            if not entity:
+                return None
+
+            # Return ORM for API compatibility
+            from infrastructure.persistence.mappers.email_mapper import EmailAccountMapper
+            return EmailAccountMapper.to_model(entity)
         except Exception as e:
             logger.exception(f"Error getting email account {account_id}")
             raise e
 
-    def get_all_accounts(self) -> List[EmailAccount]:
+    def get_all_accounts(self) -> List[EmailAccountORM]:
         """Get all email accounts."""
         try:
-            return self.db.query(EmailAccount).all()
+            entities = self._email_account_repo.find_all()
+
+            # Return ORMs for API compatibility
+            from infrastructure.persistence.mappers.email_mapper import EmailAccountMapper
+            return [EmailAccountMapper.to_model(e) for e in entities]
         except Exception as e:
             logger.exception("Error getting all email accounts")
             raise e
 
-    def update_account(self, account_id: int, update_data: EmailAccountUpdate) -> Optional[EmailAccount]:
+    def update_account(self, account_id: int, update_data: EmailAccountUpdate) -> Optional[EmailAccountORM]:
         """Update an email account."""
         try:
-            account = self.get_account_by_id(account_id)
-            if not account:
+            entity = self._email_account_repo.find_by_id(account_id)
+            if not entity:
                 return None
 
             update_dict = update_data.model_dump(exclude_unset=True)
 
-            # Convert boolean to integer for SQLite compatibility
-            if 'imap_use_ssl' in update_dict:
-                update_dict['imap_use_ssl'] = 1 if update_dict['imap_use_ssl'] else 0
-
+            # Update entity fields
             for key, value in update_dict.items():
-                setattr(account, key, value)
+                if hasattr(entity, key):
+                    setattr(entity, key, value)
 
-            self.db.commit()
-            self.db.refresh(account)
-            logger.info(f"Updated email account: {account.name}")
-            return account
+            entity.updated_at = datetime.now()
+            updated_entity = self._email_account_repo.update(entity)
+            logger.info(f"Updated email account: {updated_entity.name}")
+
+            # Return ORM for API compatibility
+            from infrastructure.persistence.mappers.email_mapper import EmailAccountMapper
+            return EmailAccountMapper.to_model(updated_entity)
         except Exception as e:
             logger.exception(f"Error updating email account {account_id}")
-            self.db.rollback()
             raise e
 
     def delete_account(self, account_id: int) -> bool:
         """Delete an email account."""
         try:
-            account = self.get_account_by_id(account_id)
-            if not account:
+            entity = self._email_account_repo.find_by_id(account_id)
+            if not entity:
                 return False
 
-            self.db.delete(account)
-            self.db.commit()
-            logger.info(f"Deleted email account: {account.name}")
-            return True
+            result = self._email_account_repo.delete(account_id)
+            if result:
+                logger.info(f"Deleted email account: {entity.name}")
+            return result
         except Exception as e:
             logger.exception(f"Error deleting email account {account_id}")
-            self.db.rollback()
             raise e
 
 
 class ClassifiedEmailService:
-    def __init__(self, db: Session):
-        self.db = db
+    """Application service for classified email operations - uses repository pattern."""
 
-    def create_classified_email(self, email_data: ClassifiedEmailCreate) -> ClassifiedEmail:
+    def __init__(self, session: Session, classified_email_repository: ClassifiedEmailRepository):
+        self._session = session
+        self._classified_email_repo = classified_email_repository
+
+    def create_classified_email(self, email_data: ClassifiedEmailCreate) -> ClassifiedEmailORM:
         """Create a new classified email entry."""
         try:
             # Validate emergency level
@@ -120,16 +133,17 @@ class ClassifiedEmailService:
                 raise ValueError("Abstract must be 200 characters or less")
 
             # Check if email already exists (same account + imap_id)
-            existing = self.db.query(ClassifiedEmail).filter(
-                ClassifiedEmail.email_account_id == email_data.email_account_id,
-                ClassifiedEmail.imap_id == email_data.imap_id
-            ).first()
+            existing = self._classified_email_repo.find_by_account_and_imap_id(
+                email_data.email_account_id,
+                email_data.imap_id
+            )
 
             if existing:
                 logger.warning(f"Email already exists for account {email_data.email_account_id}, IMAP ID {email_data.imap_id}")
                 raise ValueError("Email with this IMAP ID already exists for this account")
 
-            email = ClassifiedEmail(
+            email_entity = ClassifiedEmail(
+                id=None,
                 email_account_id=email_data.email_account_id,
                 imap_id=email_data.imap_id,
                 sender=email_data.sender,
@@ -139,35 +153,42 @@ class ClassifiedEmailService:
                 classification=email_data.classification,
                 emergency_level=email_data.emergency_level,
                 abstract=email_data.abstract,
-                lead_id=email_data.lead_id
+                lead_id=email_data.lead_id,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
             )
-            self.db.add(email)
-            self.db.commit()
-            self.db.refresh(email)
-            logger.info(f"Created classified email: {email.id} from {email.sender}")
-            return email
+            saved_entity = self._classified_email_repo.save(email_entity)
+            logger.info(f"Created classified email: {saved_entity.id} from {saved_entity.sender}")
+
+            # Return ORM for API compatibility
+            from infrastructure.persistence.mappers.email_mapper import ClassifiedEmailMapper
+            return ClassifiedEmailMapper.to_model(saved_entity)
         except Exception as e:
             logger.exception("Error creating classified email")
-            self.db.rollback()
             raise e
 
-    def get_email_by_id(self, email_id: int) -> Optional[ClassifiedEmail]:
+    def get_email_by_id(self, email_id: int) -> Optional[ClassifiedEmailORM]:
         """Get classified email by ID with history."""
         try:
-            return self.db.query(ClassifiedEmail).options(
-                joinedload(ClassifiedEmail.classification_history)
-            ).filter(ClassifiedEmail.id == email_id).first()
+            # Query ORM directly to preserve relationships
+            model = self._session.query(ClassifiedEmailORM).options(
+                joinedload(ClassifiedEmailORM.classification_history)
+            ).filter(ClassifiedEmailORM.id == email_id).one_or_none()
+            return model
         except Exception as e:
             logger.exception(f"Error getting classified email {email_id}")
             raise e
 
-    def get_email_by_imap_id(self, email_account_id: int, imap_id: str) -> Optional[ClassifiedEmail]:
+    def get_email_by_imap_id(self, email_account_id: int, imap_id: str) -> Optional[ClassifiedEmailORM]:
         """Get classified email by account and IMAP ID."""
         try:
-            return self.db.query(ClassifiedEmail).filter(
-                ClassifiedEmail.email_account_id == email_account_id,
-                ClassifiedEmail.imap_id == imap_id
-            ).first()
+            entity = self._classified_email_repo.find_by_account_and_imap_id(email_account_id, imap_id)
+            if not entity:
+                return None
+
+            # Return ORM for API compatibility
+            from infrastructure.persistence.mappers.email_mapper import ClassifiedEmailMapper
+            return ClassifiedEmailMapper.to_model(entity)
         except Exception as e:
             logger.exception(f"Error getting email by IMAP ID {imap_id}")
             raise e
@@ -176,30 +197,28 @@ class ClassifiedEmailService:
                        email_account_id: Optional[int] = None,
                        emergency_level: Optional[int] = None,
                        classification: Optional[str] = None,
-                       lead_id: Optional[int] = None) -> List[ClassifiedEmail]:
+                       lead_id: Optional[int] = None) -> List[ClassifiedEmailORM]:
         """Get all classified emails with optional filters."""
         try:
-            query = self.db.query(ClassifiedEmail)
+            entities = self._classified_email_repo.find_all(
+                email_account_id=email_account_id,
+                emergency_level=emergency_level,
+                classification=classification,
+                lead_id=lead_id
+            )
 
-            if email_account_id is not None:
-                query = query.filter(ClassifiedEmail.email_account_id == email_account_id)
-            if emergency_level is not None:
-                query = query.filter(ClassifiedEmail.emergency_level == emergency_level)
-            if classification is not None:
-                query = query.filter(ClassifiedEmail.classification == classification)
-            if lead_id is not None:
-                query = query.filter(ClassifiedEmail.lead_id == lead_id)
-
-            return query.order_by(ClassifiedEmail.email_date.desc()).all()
+            # Return ORMs for API compatibility
+            from infrastructure.persistence.mappers.email_mapper import ClassifiedEmailMapper
+            return [ClassifiedEmailMapper.to_model(e) for e in entities]
         except Exception as e:
             logger.exception("Error getting classified emails")
             raise e
 
-    def update_classification(self, email_id: int, update_data: ClassifiedEmailUpdate) -> Optional[ClassifiedEmail]:
+    def update_classification(self, email_id: int, update_data: ClassifiedEmailUpdate) -> Optional[ClassifiedEmailORM]:
         """Update email classification and create history record."""
         try:
-            email = self.get_email_by_id(email_id)
-            if not email:
+            entity = self._classified_email_repo.find_by_id(email_id)
+            if not entity:
                 return None
 
             # Validate emergency level if provided
@@ -217,41 +236,45 @@ class ClassifiedEmailService:
                 update_data.emergency_level is not None,
                 update_data.abstract is not None
             ]):
-                history = EmailClassificationHistory(
-                    classified_email_id=email.id,
-                    classification=email.classification,
-                    emergency_level=email.emergency_level,
-                    abstract=email.abstract,
+                history_entity = EmailClassificationHistory(
+                    id=None,
+                    classified_email_id=entity.id,
+                    classification=entity.classification,
+                    emergency_level=entity.emergency_level,
+                    abstract=entity.abstract,
+                    changed_at=datetime.now(),
                     change_reason=update_data.change_reason
                 )
-                self.db.add(history)
+                self._classified_email_repo.save_history(history_entity)
 
             # Update email
             update_dict = update_data.model_dump(exclude_unset=True, exclude={'change_reason'})
             for key, value in update_dict.items():
-                setattr(email, key, value)
+                if hasattr(entity, key):
+                    setattr(entity, key, value)
 
-            self.db.commit()
-            self.db.refresh(email)
-            logger.info(f"Updated classification for email {email.id}")
-            return email
+            entity.updated_at = datetime.now()
+            updated_entity = self._classified_email_repo.update(entity)
+            logger.info(f"Updated classification for email {updated_entity.id}")
+
+            # Return ORM for API compatibility
+            from infrastructure.persistence.mappers.email_mapper import ClassifiedEmailMapper
+            return ClassifiedEmailMapper.to_model(updated_entity)
         except Exception as e:
             logger.exception(f"Error updating classified email {email_id}")
-            self.db.rollback()
             raise e
 
     def delete_email(self, email_id: int) -> bool:
         """Delete a classified email and its history."""
         try:
-            email = self.get_email_by_id(email_id)
-            if not email:
+            entity = self._classified_email_repo.find_by_id(email_id)
+            if not entity:
                 return False
 
-            self.db.delete(email)
-            self.db.commit()
-            logger.info(f"Deleted classified email {email_id}")
-            return True
+            result = self._classified_email_repo.delete(email_id)
+            if result:
+                logger.info(f"Deleted classified email {email_id}")
+            return result
         except Exception as e:
             logger.exception(f"Error deleting classified email {email_id}")
-            self.db.rollback()
             raise e

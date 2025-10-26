@@ -1,7 +1,7 @@
 import logging
 import os
 from sqlalchemy.orm import Session
-from domain.orm import Report
+from infrastructure.persistence.models import ReportModel as Report
 
 logger = logging.getLogger(__name__)
 

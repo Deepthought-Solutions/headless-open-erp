@@ -1,29 +1,39 @@
 import logging
-from sqlalchemy.orm import Session
-from domain.orm import Report, Fingerprint
+from datetime import datetime
+
+from domain.repositories.report_repository import ReportRepository
+from domain.repositories.fingerprint_repository import FingerprintRepository
+from domain.entities.report import Report
 
 logger = logging.getLogger(__name__)
 
 class ReportService:
-    def __init__(self, db: Session):
-        self.db = db
+    """Application service for report operations - uses repository pattern."""
+
+    def __init__(
+        self,
+        report_repository: ReportRepository,
+        fingerprint_repository: FingerprintRepository
+    ):
+        self._report_repo = report_repository
+        self._fingerprint_repo = fingerprint_repository
 
     def create_report(self, visitor_id: str, page: str):
+        """Create a report for a visitor's page visit."""
         try:
-            fingerprint = self.db.query(Fingerprint).filter(Fingerprint.visitorId == visitor_id).first()
-            if not fingerprint:
+            # Check if fingerprint exists
+            if not self._fingerprint_repo.exists(visitor_id):
                 logger.warning(f"Fingerprint not found for visitorId {visitor_id}")
                 return None
 
+            # Create report domain entity
             report = Report(
-                visitorId=visitor_id,
-                page=page
+                id=None,
+                visitor_id=visitor_id,
+                page=page,
+                created_at=datetime.now()
             )
-            self.db.add(report)
-            self.db.commit()
-            self.db.refresh(report)
-            return report
+            return self._report_repo.save(report)
         except Exception as e:
             logger.exception("Error creating report")
-            self.db.rollback()
             raise e

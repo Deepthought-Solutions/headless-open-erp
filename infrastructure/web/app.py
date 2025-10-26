@@ -6,7 +6,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from application.notification_service import EmailNotificationService
-from application.contact_service import LeadService
+from application.lead_service import LeadService
 from application.note_service import NoteService
 from application.fingerprint_service import FingerprintService
 from application.report_service import ReportService
@@ -24,7 +24,7 @@ import os
 from altcha import create_challenge, verify_solution
 from sqlalchemy.orm import Session
 from infrastructure.database import SessionLocal
-from domain.orm import Report, Fingerprint, NoteReason
+from infrastructure.persistence.models import ReportModel as Report, FingerprintModel as Fingerprint, NoteReasonModel as NoteReason
 
 from run_migrations import run_migrations
 
@@ -87,25 +87,62 @@ def get_email_notification_service(email_sender: EmailSender = Depends(get_email
     return EmailNotificationService(email_sender)
 
 def get_lead_service(db: Session = Depends(get_db)) -> LeadService:
-    return LeadService(db)
+    from infrastructure.persistence.repositories.sqlalchemy_lead_repository import SqlAlchemyLeadRepository
+    from infrastructure.persistence.repositories.sqlalchemy_contact_repository import SqlAlchemyContactRepository
+    from infrastructure.persistence.repositories.sqlalchemy_company_repository import SqlAlchemyCompanyRepository
+    from infrastructure.persistence.repositories.sqlalchemy_position_repository import SqlAlchemyPositionRepository
+    from infrastructure.persistence.repositories.sqlalchemy_concern_repository import SqlAlchemyConcernRepository
+    from infrastructure.persistence.repositories.sqlalchemy_note_repository import SqlAlchemyNoteRepository
+    from domain.services.lead_scoring_service import LeadScoringService
+
+    lead_repo = SqlAlchemyLeadRepository(db)
+    contact_repo = SqlAlchemyContactRepository(db)
+    company_repo = SqlAlchemyCompanyRepository(db)
+    position_repo = SqlAlchemyPositionRepository(db)
+    concern_repo = SqlAlchemyConcernRepository(db)
+    note_repo = SqlAlchemyNoteRepository(db)
+    scoring_service = LeadScoringService()
+
+    return LeadService(
+        session=db,
+        lead_repository=lead_repo,
+        contact_repository=contact_repo,
+        company_repository=company_repo,
+        position_repository=position_repo,
+        concern_repository=concern_repo,
+        note_repository=note_repo,
+        scoring_service=scoring_service
+    )
 
 def get_note_service(
     db: Session = Depends(get_db),
     email_notification_service: EmailNotificationService = Depends(get_email_notification_service)
 ) -> NoteService:
-    return NoteService(db, email_notification_service)
+    from infrastructure.persistence.repositories.sqlalchemy_note_repository import SqlAlchemyNoteRepository
+    note_repo = SqlAlchemyNoteRepository(db)
+    return NoteService(note_repo, email_notification_service)
 
 def get_fingerprint_service(db: Session = Depends(get_db)) -> FingerprintService:
-    return FingerprintService(db)
+    from infrastructure.persistence.repositories.sqlalchemy_fingerprint_repository import SqlAlchemyFingerprintRepository
+    fingerprint_repo = SqlAlchemyFingerprintRepository(db)
+    return FingerprintService(fingerprint_repo)
 
 def get_report_service(db: Session = Depends(get_db)) -> ReportService:
-    return ReportService(db)
+    from infrastructure.persistence.repositories.sqlalchemy_fingerprint_repository import SqlAlchemyFingerprintRepository
+    from infrastructure.persistence.repositories.sqlalchemy_report_repository import SqlAlchemyReportRepository
+    fingerprint_repo = SqlAlchemyFingerprintRepository(db)
+    report_repo = SqlAlchemyReportRepository(db)
+    return ReportService(report_repo, fingerprint_repo)
 
 def get_email_account_service(db: Session = Depends(get_db)) -> EmailAccountService:
-    return EmailAccountService(db)
+    from infrastructure.persistence.repositories.sqlalchemy_email_repository import SqlAlchemyEmailAccountRepository
+    email_account_repo = SqlAlchemyEmailAccountRepository(db)
+    return EmailAccountService(email_account_repo)
 
 def get_classified_email_service(db: Session = Depends(get_db)) -> ClassifiedEmailService:
-    return ClassifiedEmailService(db)
+    from infrastructure.persistence.repositories.sqlalchemy_email_repository import SqlAlchemyClassifiedEmailRepository
+    classified_email_repo = SqlAlchemyClassifiedEmailRepository(db)
+    return ClassifiedEmailService(db, classified_email_repo)
 
 def verify_altcha_solution(altcha_solution: str):
     if os.environ.get("ENV") != "pytest":

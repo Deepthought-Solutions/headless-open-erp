@@ -1,15 +1,6 @@
-"""
-DEPRECATED: This module is deprecated and kept for backward compatibility only.
-All HTTP DTOs have been moved to infrastructure.web.dtos.
+"""HTTP DTOs - infrastructure concern, Pydantic models for FastAPI."""
 
-Please update your imports to use:
-    from infrastructure.web.dtos import LeadRequest, LeadResponse, etc.
-
-This file will be removed in a future version.
-"""
-
-# Re-export all DTOs for backward compatibility
-from infrastructure.web.dtos import (
+from .lead_dto import (
     LeadPayload,
     LeadRequest,
     LeadUpdateRequest,
@@ -17,15 +8,15 @@ from infrastructure.web.dtos import (
     LeadStatusResponse,
     LeadUrgencyResponse,
     RecommendedPackResponse,
-    ContactResponse,
-    CompanyResponse,
-    PositionResponse,
-    ConcernResponse,
-    NoteResponse,
-    NoteReasonResponse,
-    NoteCreateRequest,
-    FingerprintRequest,
-    ReportRequest,
+)
+from .contact_dto import ContactResponse
+from .company_dto import CompanyResponse
+from .position_dto import PositionResponse
+from .concern_dto import ConcernResponse
+from .note_dto import NoteResponse, NoteReasonResponse, NoteCreateRequest
+from .fingerprint_dto import FingerprintRequest
+from .report_dto import ReportRequest
+from .email_dto import (
     EmailAccountCreate,
     EmailAccountUpdate,
     EmailAccountResponse,
