@@ -38,8 +38,12 @@ if config.config_file_name is not None:
 # target_metadata = mymodel.Base.metadata
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from domain.orm import Base
-from infrastructure.database import SQLALCHEMY_DATABASE_URL
+from infrastructure.database import Base, SQLALCHEMY_DATABASE_URL
+
+# Import all models to populate Base.metadata for autogenerate
+# This is needed for autogenerate but not for running existing migrations
+import infrastructure.persistence.models  # noqa: F401
+
 config.set_main_option('sqlalchemy.url', SQLALCHEMY_DATABASE_URL)
 target_metadata = Base.metadata
 
