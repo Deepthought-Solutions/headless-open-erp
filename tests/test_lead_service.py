@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from domain.orm import Lead, LeadModificationLog, Fingerprint
 from application.lead_service import LeadService
 from domain.contact import LeadUpdateRequest, LeadPayload
@@ -7,8 +7,33 @@ from infrastructure.database import SessionLocal
 
 @pytest.fixture
 def lead_service():
+    from infrastructure.persistence.repositories.sqlalchemy_lead_repository import SqlAlchemyLeadRepository
+    from infrastructure.persistence.repositories.sqlalchemy_contact_repository import SqlAlchemyContactRepository
+    from infrastructure.persistence.repositories.sqlalchemy_company_repository import SqlAlchemyCompanyRepository
+    from infrastructure.persistence.repositories.sqlalchemy_position_repository import SqlAlchemyPositionRepository
+    from infrastructure.persistence.repositories.sqlalchemy_concern_repository import SqlAlchemyConcernRepository
+    from infrastructure.persistence.repositories.sqlalchemy_note_repository import SqlAlchemyNoteRepository
+    from domain.services.lead_scoring_service import LeadScoringService
+
     db = SessionLocal()
-    yield LeadService(db)
+    lead_repository = SqlAlchemyLeadRepository(db)
+    contact_repository = SqlAlchemyContactRepository(db)
+    company_repository = SqlAlchemyCompanyRepository(db)
+    position_repository = SqlAlchemyPositionRepository(db)
+    concern_repository = SqlAlchemyConcernRepository(db)
+    note_repository = SqlAlchemyNoteRepository(db)
+    scoring_service = LeadScoringService()
+
+    yield LeadService(
+        db,
+        lead_repository,
+        contact_repository,
+        company_repository,
+        position_repository,
+        concern_repository,
+        note_repository,
+        scoring_service
+    )
     db.close()
 
 def test_create_lead_with_fingerprint_and_altcha(lead_service, client):
